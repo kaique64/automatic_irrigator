@@ -8,14 +8,6 @@ const int LED_PIN = 18;
 const char* SET_TEMPERATURE_TOPIC = "temperature/set";
 const char* CURRENT_TEMPERATURE_TOPIC = "temperature/current";
 
-// const char* ssid = WIFI_SSID;
-// const char* password = WIFI_PASSWORD;
-
-// const char* mqtt_broker = MQTT_BROKER;
-// const int mqtt_port = MQTT_PORT;
-// const char* mqtt_username = MQTT_USERNAME;
-// const char* mqtt_password = MQTT_PASSWORD;
-
 float temperatureLimit = 0.0;
 float currentTemperature = 10.0;
 

@@ -5,8 +5,8 @@
 #include "secret.h"
 
 const int LED_PIN = 18;
-const char* SET_TEMPERATURE_TOPIC = "temperature/set";
-const char* CURRENT_TEMPERATURE_TOPIC = "temperature/current";
+const char* GREENHOUSE_AIR_TEMPERATURE_THRESHOLD = "greenhouse/air/temperature/threshold";
+const char* GREENHOUSE_AIR_TEMPERATURE_CURRENT = "greenhouse/air/temperature/current";
 
 float temperatureLimit = 0.0;
 float currentTemperature = 10.0;
@@ -59,7 +59,7 @@ void reconnect() {
     String clientId = "ESP32Client-" + String(random(0xffff), HEX);
     if (client.connect(clientId.c_str(), MQTT_USERNAME, MQTT_PASSWORD)) {
       Serial.println("connected");
-      client.subscribe(SET_TEMPERATURE_TOPIC);
+      client.subscribe(GREENHOUSE_AIR_TEMPERATURE_THRESHOLD);
     } else {
       Serial.print("failed, rc=");
       Serial.print(client.state());
@@ -96,7 +96,7 @@ void loop() {
     char buffer[200];
     serializeJson(docPublish, buffer);
 
-    client.publish(CURRENT_TEMPERATURE_TOPIC, buffer);
+    client.publish(GREENHOUSE_AIR_TEMPERATURE_CURRENT, buffer);
     
     Serial.print("Published MQTT: ");
     Serial.println(buffer);

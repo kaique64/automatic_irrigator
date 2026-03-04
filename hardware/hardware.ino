@@ -6,12 +6,18 @@
 #include "secret.h"
 
 #define DHT_TYPE DHT22
+#define SOLO_DRY 4095
+#define SOLO_WET 1400
+#define DHT_PIN 27
+#define SOLO_HUMIDITY_PIN 34
+#define GREENHOUSE_AIR_TEMPERATURE_THRESHOLD "greenhouse/air/temperature/threshold"
+#define GREENHOUSE_SENSORS_TEMPERATURE_CURRENT "greenhouse/sensors"
 
-const int DHT_PIN = 27;
-const int LED_PIN = 18;
-const char* AIR_SENSOR_TYPE = "air";
-const char* GREENHOUSE_AIR_TEMPERATURE_THRESHOLD = "greenhouse/air/temperature/threshold";
-const char* GREENHOUSE_AIR_TEMPERATURE_CURRENT = "greenhouse/air/temperature/current";
+// const int DHT_PIN = 27;
+// const int SOLO_HUMIDITY_PIN = 34;
+
+// const char* GREENHOUSE_AIR_TEMPERATURE_THRESHOLD = "greenhouse/air/temperature/threshold";
+// const char* GREENHOUSE_SENSORS_TEMPERATURE_CURRENT = "greenhouse/sensors";
 
 float temperatureLimit = 0.0;
 
@@ -19,6 +25,16 @@ WiFiClientSecure espClient;
 PubSubClient client(espClient);
 
 DHT dht(DHT_PIN, DHT_TYPE);
+
+float readCurrentSoloHumidityPercentage() {
+  int raw = analogRead(SOLO_HUMIDITY_PIN);
+
+  int soloHumidity = constrain(raw, SOLO_WET, SOLO_DRY);
+
+  float result = map(soloHumidity, SOLO_WET, SOLO_DRY, 100, 0);
+
+  return result;
+}
 
 void callback(char* topic, byte* payload, unsigned int length) {
   Serial.print("Message arrived [");
@@ -47,14 +63,14 @@ void setup() {
 
   Serial.begin(115200);
   
-  // pinMode(LED_PIN, OUTPUT);
-  // digitalWrite(LED_PIN, LOW);
+  pinMode(SOLO_HUMIDITY_PIN, INPUT);
 
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
   while (WiFi.status() != WL_CONNECTED) {
     delay(500);
     Serial.print(".");
   }
+  Serial.print("connected");
   
   espClient.setInsecure();
   client.setServer(MQTT_BROKER, MQTT_PORT);
@@ -62,18 +78,18 @@ void setup() {
 }
 
 void reconnect() {
-  while (!client.connected()) {
-    Serial.print("\nAttempting MQTT connection...");
+  static unsigned long lastAttempt = 0;
 
-    String clientId = "ESP32Client-" + String(random(0xffff), HEX);
-    if (client.connect(clientId.c_str(), MQTT_USERNAME, MQTT_PASSWORD)) {
-      Serial.println("connected");
-      client.subscribe(GREENHOUSE_AIR_TEMPERATURE_THRESHOLD);
-    } else {
-      Serial.print("failed, rc=");
-      Serial.print(client.state());
-      delay(5000);
-    }
+  if (millis() - lastAttempt < 5000) return;
+  lastAttempt = millis();
+
+  String clientId = "ESP32Client-" + String(random(0xffff), HEX);
+  if (client.connect(clientId.c_str(), MQTT_USERNAME, MQTT_PASSWORD)) {
+    Serial.println("MQTT connected");
+    client.subscribe(GREENHOUSE_AIR_TEMPERATURE_THRESHOLD);
+  } else {
+    Serial.print("failed, rc=");
+    Serial.print(client.state());
   }
 }
 
@@ -85,27 +101,24 @@ void loop() {
 
   float currentTemperature = dht.readTemperature();
   float currentHumidity = dht.readHumidity();
-
-  if (currentTemperature > temperatureLimit) {
-    // TODO: turn on the water pump
-  } else {
-    // TODO: turn off the water pump
-  }
+  float currentSoilHumidityPercentage = readCurrentSoloHumidityPercentage();
 
   static unsigned long lastPrint = 0;
   if (millis() - lastPrint > 2000) {
     lastPrint = millis();
-    Serial.printf("Status: Received [%.2f] | Limit [%.2f]\n", currentTemperature, temperatureLimit);
-    StaticJsonDocument<200> docPublish;
-    docPublish["sensorType"] = AIR_SENSOR_TYPE;
-    docPublish["currentTemperature"] = currentTemperature;
-    docPublish["currentHumidity"] = currentHumidity;
+    Serial.printf("[AIR] Current Temperature [%.2f] | Temperature Limit [%.2f]\n", currentTemperature, temperatureLimit);
+    Serial.printf("[SOLO] Current Percentage Solo Humidity [%.2f]\n", currentSoilHumidityPercentage);
+
+    StaticJsonDocument<200> sensorsMessage;
+    sensorsMessage["air"]["temperature"] = currentTemperature;
+    sensorsMessage["air"]["humidity"] = currentHumidity;
+    sensorsMessage["soil"]["humidity"] = currentSoilHumidityPercentage;
+    sensorsMessage["deviceId"] = WiFi.macAddress();
+    sensorsMessage["timestamp"] = millis();
 
     char buffer[200];
-    serializeJson(docPublish, buffer);
-
-    client.publish(GREENHOUSE_AIR_TEMPERATURE_CURRENT, buffer);
-    
+    serializeJson(sensorsMessage, buffer);
+    client.publish(GREENHOUSE_SENSORS_TEMPERATURE_CURRENT, buffer);
     Serial.print("Published MQTT: ");
     Serial.println(buffer);
   }

@@ -13,12 +13,6 @@
 #define GREENHOUSE_AIR_TEMPERATURE_THRESHOLD "greenhouse/air/temperature/threshold"
 #define GREENHOUSE_SENSORS_TEMPERATURE_CURRENT "greenhouse/sensors"
 
-// const int DHT_PIN = 27;
-// const int SOLO_HUMIDITY_PIN = 34;
-
-// const char* GREENHOUSE_AIR_TEMPERATURE_THRESHOLD = "greenhouse/air/temperature/threshold";
-// const char* GREENHOUSE_SENSORS_TEMPERATURE_CURRENT = "greenhouse/sensors";
-
 float temperatureLimit = 0.0;
 
 WiFiClientSecure espClient;

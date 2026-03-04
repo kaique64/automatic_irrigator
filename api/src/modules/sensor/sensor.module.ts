@@ -1,11 +1,11 @@
 import { Module } from '@nestjs/common';
 import { SensorController } from './controllers/sensor.controller';
-import { AirSensorService } from './services/air-sensor.service';
+import { SensorService } from './services/sensor.service';
 import { EventsGateway } from './gateways/events.gateway';
 
 @Module({
   controllers: [SensorController],
-  providers: [AirSensorService, EventsGateway],
+  providers: [SensorService, EventsGateway],
   exports: [EventsGateway],
   imports: [],
 })

@@ -1,14 +1,14 @@
 import { Controller } from '@nestjs/common';
 import { MessagePattern, Payload } from '@nestjs/microservices';
-import { AirSensorService } from '../services/air-sensor.service';
-import type { AirSensorMessage } from '../types/air-sensor.type';
+import { SensorService } from '../services/sensor.service';
+import type { SensorMessage } from '../types/sensor.type';
 
 @Controller()
 export class SensorController {
-  constructor(private readonly airSensorService: AirSensorService) {}
+  constructor(private readonly sensorService: SensorService) {}
 
-  @MessagePattern('greenhouse/air/temperature/current')
-  getMessage(@Payload() data: AirSensorMessage) {
-    this.airSensorService.dispatchSensorEvent(data);
+  @MessagePattern('greenhouse/sensors')
+  getMessage(@Payload() data: SensorMessage) {
+    this.sensorService.dispatchSensorEvent(data);
   }
 }

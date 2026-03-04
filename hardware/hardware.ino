@@ -2,17 +2,23 @@
 #include <WiFiClientSecure.h>
 #include <PubSubClient.h>
 #include <ArduinoJson.h>
+#include <DHT.h>
 #include "secret.h"
 
+#define DHT_TYPE DHT22
+
+const int DHT_PIN = 27;
 const int LED_PIN = 18;
+const char* AIR_SENSOR_TYPE = "air";
 const char* GREENHOUSE_AIR_TEMPERATURE_THRESHOLD = "greenhouse/air/temperature/threshold";
 const char* GREENHOUSE_AIR_TEMPERATURE_CURRENT = "greenhouse/air/temperature/current";
 
 float temperatureLimit = 0.0;
-float currentTemperature = 10.0;
 
 WiFiClientSecure espClient;
 PubSubClient client(espClient);
+
+DHT dht(DHT_PIN, DHT_TYPE);
 
 void callback(char* topic, byte* payload, unsigned int length) {
   Serial.print("Message arrived [");
@@ -36,10 +42,13 @@ void callback(char* topic, byte* payload, unsigned int length) {
 }
 
 void setup() {
+  dht.begin();
+  delay(2000);
+
   Serial.begin(115200);
   
-  pinMode(LED_PIN, OUTPUT);
-  digitalWrite(LED_PIN, LOW);
+  // pinMode(LED_PIN, OUTPUT);
+  // digitalWrite(LED_PIN, LOW);
 
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
   while (WiFi.status() != WL_CONNECTED) {
@@ -74,24 +83,23 @@ void loop() {
   }
   client.loop();
 
+  float currentTemperature = dht.readTemperature();
+  float currentHumidity = dht.readHumidity();
+
   if (currentTemperature > temperatureLimit) {
-    digitalWrite(LED_PIN, HIGH);
+    // TODO: turn on the water pump
   } else {
-    digitalWrite(LED_PIN, LOW);
+    // TODO: turn off the water pump
   }
 
   static unsigned long lastPrint = 0;
   if (millis() - lastPrint > 2000) {
     lastPrint = millis();
     Serial.printf("Status: Received [%.2f] | Limit [%.2f]\n", currentTemperature, temperatureLimit);
-  }
-
-  static unsigned long lastMsg = 0;
-  if (millis() - lastMsg > 10000) {
-    lastMsg = millis();
-
     StaticJsonDocument<200> docPublish;
+    docPublish["sensorType"] = AIR_SENSOR_TYPE;
     docPublish["currentTemperature"] = currentTemperature;
+    docPublish["currentHumidity"] = currentHumidity;
 
     char buffer[200];
     serializeJson(docPublish, buffer);

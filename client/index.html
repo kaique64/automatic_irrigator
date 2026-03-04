@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Greenhouse Dashboard</title>
+  <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+
+  <style>
+    body {
+      font-family: Arial;
+      background: #f4f6f9;
+      margin: 0;
+      padding: 20px;
+    }
+
+    h1 {
+      text-align: center;
+    }
+
+    .status {
+      text-align: center;
+      margin-bottom: 20px;
+      font-weight: bold;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 20px;
+    }
+
+    .panel {
+      background: white;
+      padding: 20px;
+      border-radius: 12px;
+      box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+    }
+
+    canvas {
+      width: 100% !important;
+      height: 250px !important;
+    }
+
+    .value {
+      font-size: 22px;
+      margin-bottom: 10px;
+    }
+  </style>
+</head>
+<body>
+
+<h1>🌱 Greenhouse Monitoring</h1>
+<div class="status">Status: <span id="status">Connecting...</span></div>
+
+<div class="grid">
+  <div class="panel">
+    <h3>🌡 Air Temperature (°C)</h3>
+    <div class="value" id="tempValue">--</div>
+    <canvas id="tempChart"></canvas>
+  </div>
+
+  <div class="panel">
+    <h3>💧 Air Humidity (%)</h3>
+    <div class="value" id="humValue">--</div>
+    <canvas id="humChart"></canvas>
+  </div>
+
+  <div class="panel">
+    <h3>🌿 Soil Moisture (%)</h3>
+    <div class="value" id="soilValue">--</div>
+    <canvas id="soilChart"></canvas>
+  </div>
+</div>
+
+<script>
+const client = io('http://localhost:3000');
+
+const tempChart = createChart("tempChart", "Temperature")
+const humChart = createChart("humChart", "Humidity")
+const soilChart = createChart("soilChart", "Soil Moisture")
+
+function createChart(id, label) {
+  return new Chart(document.getElementById(id), {
+    type: 'line',
+    data: {
+      labels: [],
+      datasets: [{
+        label: label,
+        data: [],
+        tension: 0.3
+      }]
+    },
+    options: {
+      animation: false,
+      responsive: true,
+      scales: {
+        y: { beginAtZero: true }
+      }
+    }
+  })
+}
+
+function updateChart(chart, value) {
+  chart.data.labels.push(new Date().toLocaleTimeString())
+  chart.data.datasets[0].data.push(value)
+
+  if (chart.data.labels.length > 20) {
+    chart.data.labels.shift()
+    chart.data.datasets[0].data.shift()
+  }
+
+  chart.update()
+}
+
+client.on("connect", () => {
+  document.getElementById("status").innerText = "Connected ✅"
+})
+
+client.on("reconnect", () => {
+  document.getElementById("status").innerText = "Reconnecting..."
+})
+
+client.on("error", () => {
+  document.getElementById("status").innerText = "Connection Error ❌"
+})
+
+client.on("airSensor", (message) => {
+  const { currentTemperature, currentHumidity } = message
+
+  document.getElementById("tempValue").innerText = currentTemperature + "°C"
+  updateChart(tempChart, currentTemperature)
+
+  document.getElementById("humValue").innerText = currentHumidity + "%"
+  updateChart(humChart, currentHumidity)
+
+  // if (topic === "greenhouse/air/humidity") {
+  //   document.getElementById("humValue").innerText = value + " %"
+  //   updateChart(humChart, value)
+  // }
+
+  // if (topic === "greenhouse/soil/moisture") {
+  //   document.getElementById("soilValue").innerText = value + " %"
+  //   updateChart(soilChart, value)
+  // }
+})
+</script>
+
+</body>
+</html>

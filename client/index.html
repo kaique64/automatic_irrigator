@@ -125,24 +125,17 @@ client.on("error", () => {
   document.getElementById("status").innerText = "Connection Error ❌"
 })
 
-client.on("airSensor", (message) => {
-  const { currentTemperature, currentHumidity } = message
+client.on("sensors", (message) => {
+  const { air, soil } = message
 
-  document.getElementById("tempValue").innerText = currentTemperature + "°C"
-  updateChart(tempChart, currentTemperature)
+  document.getElementById("tempValue").innerText = air.temperature + "°C"
+  updateChart(tempChart, air.temperature)
 
-  document.getElementById("humValue").innerText = currentHumidity + "%"
-  updateChart(humChart, currentHumidity)
-
-  // if (topic === "greenhouse/air/humidity") {
-  //   document.getElementById("humValue").innerText = value + " %"
-  //   updateChart(humChart, value)
-  // }
-
-  // if (topic === "greenhouse/soil/moisture") {
-  //   document.getElementById("soilValue").innerText = value + " %"
-  //   updateChart(soilChart, value)
-  // }
+  document.getElementById("humValue").innerText = air.humidity + "%"
+  updateChart(humChart, air.humidity)
+  
+  document.getElementById("soilValue").innerText = soil.humidity + " %"
+  updateChart(soilChart, soil.humidity)
 })
 </script>
 

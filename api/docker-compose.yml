@@ -8,8 +8,28 @@ services:
       POSTGRES_DB: $POSTGRES_DB
     ports:
       - '5432:5432'
+    networks:
+      - irrigator_network
     volumes:
       - pgdata:/var/lib/postgresql/data
-
+  
+  mqtt:
+    image: hivemq/hivemq-ce:latest
+    restart: always
+    ports:
+      - '1883:1883' 
+      - "8080:8080"
+    networks:
+      - irrigator_network
+    volumes:
+      - mqttdata:/opt/hivemq/data
+      - mqttlogs:/opt/hivemq/log
+  
 volumes:
   pgdata:
+  mqttdata:
+  mqttlogs:
+
+networks:
+  irrigator_network:
+    driver: bridge

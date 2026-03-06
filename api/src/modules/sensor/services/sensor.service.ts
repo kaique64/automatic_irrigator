@@ -15,7 +15,7 @@ export class SensorService implements SensorServiceInterface {
     private readonly eventsGateway: EventsGateway,
   ) {}
 
-  async dispatchSensorEvent(data: SensorMessage): Promise<void> {
+  async handleSensorData(data: SensorMessage): Promise<void> {
     try {
       this.logger.log(`Saving sensor data: ${JSON.stringify(data)}`);
 
@@ -24,6 +24,11 @@ export class SensorService implements SensorServiceInterface {
       this.logger.log('Sensor data saved successfully');
     } catch (err) {
       this.logger.error('Error saving sensor data', err);
+
+      this.eventsGateway.sendMessage(this.SENSOR_EVENT_NAME, {
+        error: (err as Error).message,
+      });
+
       throw err;
     }
 

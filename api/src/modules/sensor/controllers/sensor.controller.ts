@@ -8,7 +8,7 @@ export class SensorController {
   constructor(private readonly sensorService: SensorService) {}
 
   @MessagePattern('greenhouse/sensors')
-  getMessage(@Payload() data: SensorMessage) {
-    this.sensorService.dispatchSensorEvent(data);
+  async getSensorData(@Payload() data: SensorMessage) {
+    await this.sensorService.handleSensorData(data);
   }
 }

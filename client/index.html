@@ -125,7 +125,7 @@ client.on("error", () => {
   document.getElementById("status").innerText = "Connection Error ❌"
 })
 
-client.on("sensors", (message) => {
+client.on("sensor-update", (message) => {
   const { air, soil } = message
 
   document.getElementById("tempValue").innerText = air.temperature + "°C"

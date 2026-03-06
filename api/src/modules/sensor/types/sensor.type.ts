@@ -1,3 +1,8 @@
+export enum SensorTypeEnum {
+  AIR = 'air',
+  SOIL = 'soil',
+}
+
 export interface AirSensorMessage {
   temperature: number;
   humidity: number;
@@ -10,5 +15,6 @@ export interface SoilSensorMessage {
 export interface SensorMessage {
   deviceId: string;
   timestamp: string;
-  data: AirSensorMessage | SoilSensorMessage;
+  air: AirSensorMessage;
+  soil: SoilSensorMessage;
 }

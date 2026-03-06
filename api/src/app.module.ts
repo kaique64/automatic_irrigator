@@ -1,12 +1,18 @@
 import { Module } from '@nestjs/common';
-import { ConfigModule } from '@nestjs/config';
+import { ConfigModule, ConfigService } from '@nestjs/config';
 import { SensorModule } from './modules/sensor/sensor.module';
+import { TypeOrmModule } from '@nestjs/typeorm';
+import { typeOrmConfigFactory } from './config/typeorm.config';
 
 @Module({
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
       envFilePath: '.env',
+    }),
+    TypeOrmModule.forRootAsync({
+      inject: [ConfigService],
+      useFactory: typeOrmConfigFactory,
     }),
     SensorModule,
   ],

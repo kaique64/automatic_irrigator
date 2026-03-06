@@ -28,6 +28,7 @@
     "@nestjs/platform-socket.io": "^11.1.15",
     "@nestjs/typeorm": "^11.0.0",
     "@nestjs/websockets": "^11.1.15",
+    "@timescaledb/typeorm": "^0.0.1",
     "mqtt": "^5.15.0",
     "pg": "^8.20.0",
     "reflect-metadata": "^0.2.2",

@@ -1,6 +1,8 @@
 import { Entity, Column, PrimaryGeneratedColumn, Index } from 'typeorm';
 import type { SensorMessage } from '../types/sensor.type';
+import { Hypertable, TimeColumn } from '@timescaledb/typeorm';
 
+@Hypertable({})
 @Entity('sensor_data')
 @Index(['deviceId', 'timestamp'])
 @Index(['timestamp'])
@@ -11,7 +13,7 @@ export class SensorData {
   @Column({ type: 'varchar', length: 255, name: 'device_id' })
   deviceId: string;
 
-  @Column({ type: 'timestamptz', name: 'timestamp' })
+  @TimeColumn()
   timestamp: Date;
 
   @Column({ type: 'varchar', length: 50, name: 'sensor_type' })

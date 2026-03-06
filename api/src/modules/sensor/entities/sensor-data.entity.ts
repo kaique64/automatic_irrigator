@@ -1,4 +1,5 @@
 import { Entity, Column, PrimaryGeneratedColumn, Index } from 'typeorm';
+import type { SensorMessage } from '../types/sensor.type';
 
 @Entity('sensor_data')
 @Index(['deviceId', 'timestamp'])
@@ -23,7 +24,7 @@ export class SensorData {
   humidity: number;
 
   @Column({ type: 'jsonb', nullable: true, name: 'raw_data' })
-  rawData: any;
+  rawData: SensorMessage;
 
   @Column({
     type: 'timestamptz',

@@ -1,28 +1,37 @@
-/* eslint-disable @typescript-eslint/no-unsafe-assignment */
 import { Injectable } from '@nestjs/common';
 import { SensorData } from '../entities/sensor-data.entity';
 import { SensorMessage, SensorTypeEnum } from '../types/sensor.type';
+import { SensorDataBuilder } from '../builders/sensor-data.builder';
 
 @Injectable()
 export class SensorMapper {
-  static toEntity({
+  static toEntities({
     deviceId,
     timestamp,
     air,
     soil,
-  }: SensorMessage): SensorData {
-    const sensorData = new SensorData();
-    sensorData.deviceId = deviceId;
-    sensorData.timestamp = new Date(timestamp);
-    sensorData.rawData = { deviceId, timestamp, air, soil };
+  }: SensorMessage): SensorData[] {
+    const rawData = { deviceId, timestamp, air, soil };
+    const parsedTimestamp = new Date(timestamp);
 
-    sensorData.sensorType = SensorTypeEnum.AIR;
-    sensorData.temperature = air.temperature;
-    sensorData.humidity = air.humidity;
-    sensorData.sensorType = SensorTypeEnum.SOIL;
-    sensorData.humidity = soil.humidity;
-    sensorData.temperature = null;
+    const airSensorData = SensorDataBuilder.create()
+      .withDeviceId(deviceId)
+      .withTimestamp(parsedTimestamp)
+      .withSensorType(SensorTypeEnum.AIR)
+      .withTemperature(air.temperature)
+      .withHumidity(air.humidity)
+      .withRawData(rawData)
+      .build();
 
-    return sensorData;
+    const soilSensorData = SensorDataBuilder.create()
+      .withDeviceId(deviceId)
+      .withTimestamp(parsedTimestamp)
+      .withSensorType(SensorTypeEnum.SOIL)
+      .withTemperature(null)
+      .withHumidity(soil.humidity)
+      .withRawData(rawData)
+      .build();
+
+    return [airSensorData, soilSensorData];
   }
 }

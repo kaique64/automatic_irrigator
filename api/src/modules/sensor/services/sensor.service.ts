@@ -6,7 +6,7 @@ import { SensorDataRepository } from '../repositories/sensor-data.repository';
 
 @Injectable()
 export class SensorService implements SensorServiceInterface {
-  private SENSOR_EVENT_NAME = 'sensors';
+  private SENSOR_EVENT_NAME = 'sensor-update';
 
   private logger = new Logger(SensorService.name);
 

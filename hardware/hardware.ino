@@ -5,35 +5,61 @@
 #include <DHT.h>
 #include "secret.h"
 
+#define WATER_PUMP_OFF 0
+#define WATER_PUMP_FULL_CAPACITY 255
+
 #define DHT_TYPE DHT22
-#define SOLO_DRY 4095
-#define SOLO_WET 1400
 #define DHT_PIN 27
-#define SOLO_HUMIDITY_PIN 34
+#define SOIL_HUMIDITY_PIN 34
+
+#define SOIL_DRY 4095
+#define SOIL_WET 1400
+
+#define LED_PIN 4
+
 #define GREENHOUSE_AIR_TEMPERATURE_THRESHOLD "greenhouse/air/temperature/threshold"
 #define GREENHOUSE_SENSORS_TEMPERATURE_CURRENT "greenhouse/sensors"
 
+float soilSetpoint = 70.0;
 float temperatureLimit = 0.0;
+
+float Kp_base = 2.0;
+float Ki_base = 0.05;
+float Kd_base = 1.0;
+
+float T_ref = 25.0;
+float alpha = 0.03;
+
+float error = 0;
+float previousError = 0;
+float integral = 0;
+float derivative = 0;
+float pidOutput = 0;
+
+unsigned long lastPIDTime = 0;
+
+const int pwmChannel = 0;
+const int pwmFrequency = 5000;
+const int pwmResolution = 8;
 
 WiFiClientSecure espClient;
 PubSubClient client(espClient);
 
 DHT dht(DHT_PIN, DHT_TYPE);
 
-float readCurrentSoloHumidityPercentage() {
-  int raw = analogRead(SOLO_HUMIDITY_PIN);
+float readCurrentSoilHumidityPercentage() {
 
-  int soloHumidity = constrain(raw, SOLO_WET, SOLO_DRY);
+  int raw = analogRead(SOIL_HUMIDITY_PIN);
 
-  float result = map(soloHumidity, SOLO_WET, SOLO_DRY, 100, 0);
+  int soilHumidity = constrain(raw, SOIL_WET, SOIL_DRY);
+
+  float result = map(soilHumidity, SOIL_WET, SOIL_DRY, 100, 0);
 
   return result;
 }
 
 void callback(char* topic, byte* payload, unsigned int length) {
-  Serial.print("Message arrived [");
-  Serial.print(topic);
-  Serial.print("] ");
+
   StaticJsonDocument<200> doc;
 
   DeserializationError error = deserializeJson(doc, payload, length);
@@ -45,74 +71,137 @@ void callback(char* topic, byte* payload, unsigned int length) {
   }
 
   if (doc.containsKey("temperatureLimit")) {
+
     temperatureLimit = doc["temperatureLimit"];
-    Serial.print("Temperature Limit: ");
+
+    Serial.print("Temperature Limit received: ");
     Serial.println(temperatureLimit);
   }
 }
 
 void setup() {
+
+  Serial.begin(115200);
+
   dht.begin();
   delay(2000);
 
-  Serial.begin(115200);
-  
-  pinMode(SOLO_HUMIDITY_PIN, INPUT);
+  pinMode(SOIL_HUMIDITY_PIN, INPUT);
+
+  ledcAttach(LED_PIN, pwmChannel);
 
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+
   while (WiFi.status() != WL_CONNECTED) {
     delay(500);
     Serial.print(".");
   }
-  Serial.print("connected");
-  
+
+  Serial.println("WiFi connected");
+
   espClient.setInsecure();
+
   client.setServer(MQTT_BROKER, MQTT_PORT);
   client.setCallback(callback);
+
+  lastPIDTime = millis();
 }
 
 void reconnect() {
+
   static unsigned long lastAttempt = 0;
 
   if (millis() - lastAttempt < 5000) return;
+
   lastAttempt = millis();
 
   String clientId = "ESP32Client-" + String(random(0xffff), HEX);
+
   if (client.connect(clientId.c_str(), MQTT_USERNAME, MQTT_PASSWORD)) {
+
     Serial.println("MQTT connected");
+
     client.subscribe(GREENHOUSE_AIR_TEMPERATURE_THRESHOLD);
+
   } else {
-    Serial.print("failed, rc=");
-    Serial.print(client.state());
+
+    Serial.print("MQTT failed, rc=");
+    Serial.println(client.state());
   }
 }
 
 void loop() {
+
   if (!client.connected()) {
     reconnect();
   }
+
   client.loop();
 
   float currentTemperature = dht.readTemperature();
   float currentHumidity = dht.readHumidity();
-  float currentSoilHumidityPercentage = readCurrentSoloHumidityPercentage();
+  float currentSoilHumidity = readCurrentSoilHumidityPercentage();
 
-  static unsigned long lastPrint = 0;
-  if (millis() - lastPrint > 2000) {
-    lastPrint = millis();
-    Serial.printf("[AIR] Current Temperature [%.2f] | Temperature Limit [%.2f]\n", currentTemperature, temperatureLimit);
-    Serial.printf("[SOLO] Current Percentage Solo Humidity [%.2f]\n", currentSoilHumidityPercentage);
+  unsigned long currentTime = millis();
+  float deltaTime = (currentTime - lastPIDTime) / 1000.0;
+
+  if (deltaTime >= 1.0) {
+
+    float thermalFactor = 1 + alpha * (currentTemperature - T_ref);
+    thermalFactor = constrain(thermalFactor, 0.7, 1.5);
+
+    float Kp = Kp_base * thermalFactor;
+    float Ki = Ki_base * thermalFactor;
+    float Kd = Kd_base * thermalFactor;
+
+    error = soilSetpoint - currentSoilHumidity;
+
+    integral += error * deltaTime;
+    integral = constrain(integral, -100, 100);
+
+    derivative = (error - previousError) / deltaTime;
+
+    pidOutput = (Kp * error) + (Ki * integral) + (Kd * derivative);
+    pidOutput = constrain(pidOutput, WATER_PUMP_OFF, WATER_PUMP_FULL_CAPACITY);
+
+    if (abs(error) < 2) {
+      pidOutput = 0;
+    }
+
+    ledcWrite(LED_PIN, pidOutput);
+
+    previousError = error;
+    lastPIDTime = currentTime;
+  }
+
+  static unsigned long lastPublish = 0;
+
+  if (millis() - lastPublish > 2000) {
+
+    lastPublish = millis();
+
+    Serial.printf("[AIR] Temp: %.2f | Humidity: %.2f\n", currentTemperature, currentHumidity);
+    Serial.printf("[SOIL] Humidity: %.2f\n", currentSoilHumidity);
+    Serial.printf("[PID] Output: %.2f\n", pidOutput);
 
     StaticJsonDocument<200> sensorsMessage;
+
     sensorsMessage["air"]["temperature"] = currentTemperature;
     sensorsMessage["air"]["humidity"] = currentHumidity;
-    sensorsMessage["soil"]["humidity"] = currentSoilHumidityPercentage;
+
+    sensorsMessage["soil"]["humidity"] = currentSoilHumidity;
+
+    sensorsMessage["irrigation"]["pid_output"] = pidOutput;
+
     sensorsMessage["deviceId"] = WiFi.macAddress();
     sensorsMessage["timestamp"] = millis();
 
     char buffer[200];
+
     serializeJson(sensorsMessage, buffer);
+
     client.publish(GREENHOUSE_SENSORS_TEMPERATURE_CURRENT, buffer);
+
     Serial.print("Published MQTT: ");
     Serial.println(buffer);
   }

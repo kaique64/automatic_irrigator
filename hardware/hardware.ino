@@ -22,6 +22,8 @@
 
 float soilSetpoint = 70.0;
 float temperatureLimit = 0.0;
+float lastValidTemperature = 0.0;
+float lastValidHumidity = 0.0;
 
 float Kp_base = 2.0;
 float Ki_base = 0.05;
@@ -43,7 +45,7 @@ const int pwmFrequency = 5000;
 const int pwmResolution = 8;
 
 WiFiClientSecure espClient;
-PubSubClient client(espClient);
+PubSubClient mqttClient(espClient);
 
 DHT dht(DHT_PIN, DHT_TYPE);
 
@@ -88,7 +90,7 @@ void setup() {
 
   pinMode(SOIL_HUMIDITY_PIN, INPUT);
 
-  ledcAttach(LED_PIN, pwmChannel);
+  ledcAttach(LED_PIN, pwmFrequency, pwmResolution);
 
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
 
@@ -101,14 +103,13 @@ void setup() {
 
   espClient.setInsecure();
 
-  client.setServer(MQTT_BROKER, MQTT_PORT);
-  client.setCallback(callback);
+  mqttClient.setServer(MQTT_BROKER, MQTT_PORT);
+  mqttClient.setCallback(callback);
 
   lastPIDTime = millis();
 }
 
-void reconnect() {
-
+void reconnectMQTT() {
   static unsigned long lastAttempt = 0;
 
   if (millis() - lastAttempt < 5000) return;
@@ -117,29 +118,37 @@ void reconnect() {
 
   String clientId = "ESP32Client-" + String(random(0xffff), HEX);
 
-  if (client.connect(clientId.c_str(), MQTT_USERNAME, MQTT_PASSWORD)) {
+  if (mqttClient.connect(clientId.c_str(), MQTT_USERNAME, MQTT_PASSWORD)) {
 
     Serial.println("MQTT connected");
 
-    client.subscribe(GREENHOUSE_AIR_TEMPERATURE_THRESHOLD);
+    mqttClient.subscribe(GREENHOUSE_AIR_TEMPERATURE_THRESHOLD);
 
   } else {
 
     Serial.print("MQTT failed, rc=");
-    Serial.println(client.state());
+    Serial.println(mqttClient.state());
   }
 }
 
 void loop() {
-
-  if (!client.connected()) {
-    reconnect();
+  if (!mqttClient.connected()) {
+    reconnectMQTT();
   }
 
-  client.loop();
+  mqttClient.loop();
 
   float currentTemperature = dht.readTemperature();
   float currentHumidity = dht.readHumidity();
+
+  if (isnan(currentTemperature) || isnan(currentHumidity)) {
+    currentTemperature = lastValidTemperature;
+    currentHumidity = lastValidHumidity;
+  } else {
+    lastValidTemperature = currentTemperature;
+    lastValidHumidity = currentHumidity;
+  }
+
   float currentSoilHumidity = readCurrentSoilHumidityPercentage();
 
   unsigned long currentTime = millis();
@@ -166,6 +175,10 @@ void loop() {
 
     if (abs(error) < 2) {
       pidOutput = 0;
+    }
+
+    if (pidOutput > 0) {
+      pidOutput = map(pidOutput, 0, 255, 90, 255);
     }
 
     ledcWrite(LED_PIN, pidOutput);
@@ -200,7 +213,7 @@ void loop() {
 
     serializeJson(sensorsMessage, buffer);
 
-    client.publish(GREENHOUSE_SENSORS_TEMPERATURE_CURRENT, buffer);
+    mqttClient.publish(GREENHOUSE_SENSORS_TEMPERATURE_CURRENT, buffer);
 
     Serial.print("Published MQTT: ");
     Serial.println(buffer);

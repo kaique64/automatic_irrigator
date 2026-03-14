@@ -15,7 +15,7 @@
 #define SOIL_DRY 4095
 #define SOIL_WET 1400
 
-#define LED_PIN 4
+#define WATER_PUMP_PWM_PIN 25
 
 #define GREENHOUSE_AIR_TEMPERATURE_THRESHOLD "greenhouse/air/temperature/threshold"
 #define GREENHOUSE_SENSORS_TEMPERATURE_CURRENT "greenhouse/sensors"
@@ -41,7 +41,7 @@ float pidOutput = 0;
 unsigned long lastPIDTime = 0;
 
 const int pwmChannel = 0;
-const int pwmFrequency = 5000;
+const int pwmFrequency = 1000;
 const int pwmResolution = 8;
 
 WiFiClientSecure espClient;
@@ -90,7 +90,7 @@ void setup() {
 
   pinMode(SOIL_HUMIDITY_PIN, INPUT);
 
-  ledcAttach(LED_PIN, pwmFrequency, pwmResolution);
+  ledcAttach(WATER_PUMP_PWM_PIN, pwmFrequency, pwmResolution);
 
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
 
@@ -181,7 +181,7 @@ void loop() {
       pidOutput = map(pidOutput, 0, 255, 90, 255);
     }
 
-    ledcWrite(LED_PIN, pidOutput);
+    ledcWrite(WATER_PUMP_PWM_PIN, pidOutput);
 
     previousError = error;
     lastPIDTime = currentTime;

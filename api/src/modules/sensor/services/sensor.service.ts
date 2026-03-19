@@ -3,6 +3,7 @@ import { SensorMessage } from '../types/sensor.type';
 import { SensorServiceInterface } from './sensor.service.interface';
 import { EventsGateway } from '../gateways/events.gateway';
 import { SensorDataRepository } from '../repositories/sensor-data.repository';
+import { SensorMapper } from '../mappers/sensor.mapper';
 
 @Injectable()
 export class SensorService implements SensorServiceInterface {
@@ -19,7 +20,9 @@ export class SensorService implements SensorServiceInterface {
     try {
       this.logger.log(`Saving sensor data: ${JSON.stringify(data)}`);
 
-      await this.sensorDataRepository.save(data);
+      const sensorData = SensorMapper.toEntities(data);
+
+      await this.sensorDataRepository.save(sensorData);
 
       this.logger.log('Sensor data saved successfully');
     } catch (err) {

@@ -1,12 +1,14 @@
-/* eslint-disable @typescript-eslint/no-unsafe-assignment */
-import { Logger } from '@nestjs/common';
+import { forwardRef, Inject, Logger } from '@nestjs/common';
 import {
   OnGatewayConnection,
   OnGatewayDisconnect,
+  SubscribeMessage,
   WebSocketGateway,
   WebSocketServer,
 } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
+import { SensorController } from '../controllers/sensor.controller';
+import type { SetpoingConfigMessage } from '../types/setpoint-config.type';
 
 @WebSocketGateway({
   cors: {
@@ -19,6 +21,11 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
   @WebSocketServer()
   server: Server;
 
+  constructor(
+    @Inject(forwardRef(() => SensorController))
+    private readonly sensorController: SensorController,
+  ) {}
+
   handleConnection(client: Socket) {
     this.logger.log(`Client connected: ${client.id}`);
   }
@@ -29,5 +36,13 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   sendMessage<T>(eventName: string, message: T) {
     this.server.emit(eventName, message);
+  }
+
+  @SubscribeMessage('setpoint-config')
+  async handleSetpointConfigMessage(
+    client: Socket,
+    data: SetpoingConfigMessage,
+  ) {
+    await this.sensorController.handleSetpointConfig(data);
   }
 }

@@ -46,6 +46,73 @@
       font-size: 22px;
       margin-bottom: 10px;
     }
+
+    .setpoint-container {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-top: 16px;
+      padding-top: 16px;
+      border-top: 1px solid #eee;
+    }
+
+    .setpoint-container label {
+      font-size: 14px;
+      color: #555;
+      white-space: nowrap;
+    }
+
+    .setpoint-input-wrapper {
+      position: relative;
+      display: inline-flex;
+      align-items: center;
+    }
+
+    .setpoint-input-wrapper input {
+      width: 80px;
+      padding: 6px 22px 6px 10px;
+      border: 1px solid #ccc;
+      border-radius: 6px;
+      font-size: 14px;
+      outline: none;
+      transition: border-color 0.2s;
+      box-sizing: border-box;
+    }
+
+    .setpoint-input-wrapper input:focus {
+      border-color: #4caf50;
+    }
+
+    .setpoint-input-wrapper .pct-symbol {
+      position: absolute;
+      right: 8px;
+      font-size: 14px;
+      color: #555;
+      pointer-events: none;
+      display: none; /* toggled via JS with inline-block */
+    }
+
+    .setpoint-container button {
+      padding: 6px 14px;
+      background-color: #4caf50;
+      color: white;
+      border: none;
+      border-radius: 6px;
+      font-size: 14px;
+      cursor: pointer;
+      transition: background-color 0.2s;
+    }
+
+    .setpoint-container button:hover {
+      background-color: #388e3c;
+    }
+
+    .setpoint-feedback {
+      font-size: 12px;
+      color: #4caf50;
+      margin-top: 6px;
+      min-height: 16px;
+    }
   </style>
 </head>
 <body>
@@ -70,6 +137,26 @@
     <h3>🌿 Soil Moisture (%)</h3>
     <div class="value" id="soilValue">--</div>
     <canvas id="soilChart"></canvas>
+
+    <div class="setpoint-container">
+      <label for="soilSetpoint">Setpoint:</label>
+      <div class="setpoint-input-wrapper">
+        <input
+          type="text"
+          id="soilSetpoint"
+          inputmode="decimal"
+          placeholder="0–100"
+          value="70"
+          maxlength="6"
+          oninput="handleSetpointInput(this)"
+          onblur="handleSetpointBlur(this)"
+          onfocus="handleSetpointFocus(this)"
+        />
+        <span class="pct-symbol" id="pctSymbol">%</span>
+      </div>
+      <button onclick="sendSetpoint()">Aplicar</button>
+    </div>
+    <div class="setpoint-feedback" id="setpointFeedback"></div>
   </div>
 </div>
 
@@ -111,6 +198,51 @@ function updateChart(chart, value) {
   }
 
   chart.update()
+}
+
+function sendSetpoint() {
+  const feedback = document.getElementById("setpointFeedback")
+  const raw = document.getElementById("soilSetpoint").value
+  // Replace comma with dot for parsing (Brazilian decimal separator)
+  const normalized = raw.replace(",", ".")
+  const value = parseFloat(normalized)
+
+  if (isNaN(value) || value < 0 || value > 100) {
+    feedback.style.color = "#e53935"
+    feedback.innerText = "⚠️ Insira um valor entre 0 e 100."
+    return
+  }
+
+  client.emit("setpoint-config", { setpoint: value })
+
+  feedback.style.color = "#4caf50"
+  feedback.innerText = `✅ Setpoint enviado: ${raw}%`
+
+  setTimeout(() => { feedback.innerText = "" }, 3000)
+}
+
+function setPctVisible(show) {
+  document.getElementById("pctSymbol").style.display = show ? "inline-block" : "none"
+}
+
+function handleSetpointInput(el) {
+  // Remove anything that isn't a digit, comma or dot
+  el.value = el.value.replace(/[^0-9.,]/g, "")
+
+  // Keep only the first decimal separator
+  el.value = el.value.replace(/([.,])([^.,]*)([.,])/g, "$1$2")
+
+  setPctVisible(el.value.length > 0)
+}
+
+function handleSetpointBlur(el) {
+  // Normalize dot → comma for display consistency
+  el.value = el.value.replace(".", ",")
+  setPctVisible(el.value.length > 0)
+}
+
+function handleSetpointFocus(el) {
+  setPctVisible(el.value.length > 0)
 }
 
 client.on("connect", () => {

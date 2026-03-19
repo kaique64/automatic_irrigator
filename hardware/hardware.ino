@@ -17,8 +17,8 @@
 
 #define WATER_PUMP_PWM_PIN 25
 
-#define GREENHOUSE_AIR_TEMPERATURE_THRESHOLD "greenhouse/air/temperature/threshold"
-#define GREENHOUSE_SENSORS_TEMPERATURE_CURRENT "greenhouse/sensors"
+#define GREENHOUSE_SOIL_HUMIDITY_SETPOINT "greenhouse/setpoint"
+#define GREENHOUSE_SENSORS_CURRENT_QUEUE "greenhouse/sensors"
 
 float soilSetpoint = 70.0;
 float temperatureLimit = 0.0;
@@ -122,7 +122,7 @@ void reconnectMQTT() {
 
     Serial.println("MQTT connected");
 
-    mqttClient.subscribe(GREENHOUSE_AIR_TEMPERATURE_THRESHOLD);
+    mqttClient.subscribe(GREENHOUSE_SOIL_HUMIDITY_SETPOINT);
 
   } else {
 
@@ -213,7 +213,7 @@ void loop() {
 
     serializeJson(sensorsMessage, buffer);
 
-    mqttClient.publish(GREENHOUSE_SENSORS_TEMPERATURE_CURRENT, buffer);
+    mqttClient.publish(GREENHOUSE_SENSORS_CURRENT_QUEUE, buffer);
 
     Serial.print("Published MQTT: ");
     Serial.println(buffer);

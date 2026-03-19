@@ -1,275 +1,493 @@
 <!DOCTYPE html>
-<html>
+<html lang="pt-BR">
 <head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Greenhouse Dashboard</title>
-  <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet">
+
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            display: ['Syne', 'sans-serif'],
+            mono: ['DM Mono', 'monospace'],
+          },
+          colors: {
+            leaf: {
+              50:  '#f0faf2',
+              100: '#d6f5dd',
+              200: '#aeeabc',
+              300: '#77d892',
+              400: '#3ec063',
+              500: '#1fa845',
+              600: '#138535',
+              700: '#116a2c',
+              800: '#115426',
+              900: '#0e4520',
+            },
+          },
+          animation: {
+            'fade-in':  'fadeIn 0.6s ease forwards',
+            'slide-up': 'slideUp 0.5s ease forwards',
+          },
+          keyframes: {
+            fadeIn:  { '0%': { opacity: '0' }, '100%': { opacity: '1' } },
+            slideUp: { '0%': { opacity: '0', transform: 'translateY(16px)' }, '100%': { opacity: '1', transform: 'translateY(0)' } },
+          },
+        }
+      }
+    }
+  </script>
 
   <style>
     body {
-      font-family: Arial;
-      background: #f4f6f9;
-      margin: 0;
-      padding: 20px;
+      background: #0d1a0f;
+      font-family: 'Syne', sans-serif;
     }
 
-    h1 {
-      text-align: center;
+    /* Grain texture */
+    body::before {
+      content: '';
+      position: fixed; inset: 0;
+      pointer-events: none; z-index: 0;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.04'/%3E%3C/svg%3E");
+      background-repeat: repeat; background-size: 128px 128px; opacity: 0.35;
     }
 
-    .status {
-      text-align: center;
-      margin-bottom: 20px;
-      font-weight: bold;
+    /* Ambient glow blobs */
+    .blob-1 {
+      background: radial-gradient(ellipse, rgba(30,168,70,0.18) 0%, transparent 70%);
+      position: fixed; top: -10%; left: -10%;
+      width: 60vw; height: 60vw; border-radius: 50%;
+      pointer-events: none; z-index: 0;
+      animation: drift1 18s ease-in-out infinite alternate;
+    }
+    .blob-2 {
+      background: radial-gradient(ellipse, rgba(13,122,255,0.09) 0%, transparent 70%);
+      position: fixed; bottom: -15%; right: -10%;
+      width: 55vw; height: 55vw; border-radius: 50%;
+      pointer-events: none; z-index: 0;
+      animation: drift2 22s ease-in-out infinite alternate;
+    }
+    @keyframes drift1 { 0% { transform: translate(0,0) scale(1); } 100% { transform: translate(5%,8%) scale(1.1); } }
+    @keyframes drift2 { 0% { transform: translate(0,0) scale(1); } 100% { transform: translate(-6%,-5%) scale(1.08); } }
+
+    /* Glass card */
+    .card {
+      background: rgba(13, 26, 14, 0.72);
+      border: 1px solid rgba(46, 120, 60, 0.22);
+      backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px);
+      border-radius: 20px;
+      transition: border-color .3s, box-shadow .3s;
+    }
+    .card:hover {
+      border-color: rgba(62, 192, 99, 0.38);
+      box-shadow: 0 0 32px rgba(30, 168, 70, 0.12);
     }
 
-    .grid {
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 20px;
+    /* Big metric value */
+    .big-value {
+      font-family: 'DM Mono', monospace;
+      font-size: clamp(2.2rem, 4vw, 3rem);
+      font-weight: 500; line-height: 1; letter-spacing: -0.04em;
+      background: linear-gradient(135deg, #a8efbe 0%, #3ec063 55%, #77d892 100%);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+    }
+    .big-value.temp-color {
+      background: linear-gradient(135deg, #fcd3b4 0%, #f87a38 55%, #fbbf80 100%);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+    }
+    .big-value.hum-color {
+      background: linear-gradient(135deg, #bae6fd 0%, #38b2f8 55%, #7dd3fc 100%);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
     }
 
-    .panel {
-      background: white;
-      padding: 20px;
-      border-radius: 12px;
-      box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+    /* Status dot */
+    .status-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; flex-shrink: 0; }
+    .connected    { background: #3ec063; box-shadow: 0 0 8px #3ec063; animation: pulse-dot 2s ease infinite; }
+    .disconnected { background: #f87171; box-shadow: 0 0 8px #f87171; }
+    .connecting   { background: #f59e0b; box-shadow: 0 0 8px #f59e0b; }
+    @keyframes pulse-dot {
+      0%, 100% { box-shadow: 0 0 6px #3ec063; }
+      50%      { box-shadow: 0 0 14px #3ec063; }
     }
 
-    canvas {
-      width: 100% !important;
-      height: 250px !important;
+    /* Header shimmer line */
+    .shimmer-line {
+      height: 1px;
+      background: linear-gradient(90deg, transparent 0%, rgba(62,192,99,0.6) 40%, rgba(62,192,99,0.6) 60%, transparent 100%);
+      background-size: 200% 100%;
+      animation: shimmer 4s ease-in-out infinite;
     }
+    @keyframes shimmer { 0% { background-position: -200% center; } 100% { background-position: 200% center; } }
 
-    .value {
-      font-size: 22px;
-      margin-bottom: 10px;
-    }
+    /* Chart canvas */
+    .chart-wrapper canvas { width: 100% !important; height: 170px !important; }
 
-    .setpoint-container {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      margin-top: 16px;
-      padding-top: 16px;
-      border-top: 1px solid #eee;
-    }
-
-    .setpoint-container label {
-      font-size: 14px;
-      color: #555;
-      white-space: nowrap;
-    }
-
-    .setpoint-input-wrapper {
-      position: relative;
-      display: inline-flex;
-      align-items: center;
-    }
-
-    .setpoint-input-wrapper input {
-      width: 80px;
-      padding: 6px 22px 6px 10px;
-      border: 1px solid #ccc;
-      border-radius: 6px;
-      font-size: 14px;
+    /* Setpoint input */
+    .setpoint-input {
+      background: rgba(10, 22, 11, 0.7);
+      border: 1px solid rgba(62, 192, 99, 0.28);
+      color: #d6f5dd;
+      border-radius: 10px;
+      padding: 8px 34px 8px 12px;
+      font-family: 'DM Mono', monospace;
+      font-size: 14px; width: 100px;
       outline: none;
-      transition: border-color 0.2s;
-      box-sizing: border-box;
+      transition: border-color .2s, box-shadow .2s;
+    }
+    .setpoint-input:focus {
+      border-color: rgba(62, 192, 99, 0.75);
+      box-shadow: 0 0 0 3px rgba(62, 192, 99, 0.15);
+    }
+    .setpoint-input::placeholder { color: rgba(174, 234, 188, 0.3); }
+
+    /* Apply button */
+    .apply-btn {
+      background: linear-gradient(135deg, #1fa845 0%, #3ec063 100%);
+      color: #fff; font-family: 'Syne', sans-serif;
+      font-weight: 700; font-size: 12px; letter-spacing: 0.06em; text-transform: uppercase;
+      border: none; border-radius: 10px; padding: 9px 18px; cursor: pointer;
+      transition: opacity .2s, transform .15s, box-shadow .2s;
+      box-shadow: 0 4px 16px rgba(30,168,70,0.35);
+    }
+    .apply-btn:hover  { opacity: .9; transform: translateY(-1px); box-shadow: 0 6px 22px rgba(30,168,70,0.48); }
+    .apply-btn:active { transform: translateY(0); }
+
+    /* Mini badge */
+    .badge {
+      font-family: 'DM Mono', monospace; font-size: 10px;
+      padding: 2px 8px; border-radius: 6px;
+      background: rgba(62, 192, 99, 0.1);
+      color: rgba(119, 216, 146, 0.85);
+      border: 1px solid rgba(62, 192, 99, 0.18);
     }
 
-    .setpoint-input-wrapper input:focus {
-      border-color: #4caf50;
+    /* Icon pill */
+    .icon-pill {
+      width: 38px; height: 38px; border-radius: 10px;
+      background: rgba(62, 192, 99, 0.1);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 18px; flex-shrink: 0;
     }
 
-    .setpoint-input-wrapper .pct-symbol {
-      position: absolute;
-      right: 8px;
-      font-size: 14px;
-      color: #555;
-      pointer-events: none;
-      display: none; /* toggled via JS with inline-block */
-    }
+    /* Divider */
+    .soft-divider { border: none; border-top: 1px solid rgba(62, 192, 99, 0.1); margin: 16px 0; }
 
-    .setpoint-container button {
-      padding: 6px 14px;
-      background-color: #4caf50;
-      color: white;
-      border: none;
-      border-radius: 6px;
-      font-size: 14px;
-      cursor: pointer;
-      transition: background-color 0.2s;
-    }
-
-    .setpoint-container button:hover {
-      background-color: #388e3c;
-    }
-
-    .setpoint-feedback {
-      font-size: 12px;
-      color: #4caf50;
-      margin-top: 6px;
-      min-height: 16px;
-    }
+    /* Feedback */
+    .feedback-ok  { color: #4ade80; }
+    .feedback-err { color: #f87171; }
   </style>
 </head>
-<body>
+<body class="min-h-screen relative">
 
-<h1>🌱 Greenhouse Monitoring</h1>
-<div class="status">Status: <span id="status">Connecting...</span></div>
+  <div class="blob-1"></div>
+  <div class="blob-2"></div>
 
-<div class="grid">
-  <div class="panel">
-    <h3>🌡 Air Temperature (°C)</h3>
-    <div class="value" id="tempValue">--</div>
-    <canvas id="tempChart"></canvas>
-  </div>
+  <div class="relative z-10 max-w-6xl mx-auto px-5 py-10">
 
-  <div class="panel">
-    <h3>💧 Air Humidity (%)</h3>
-    <div class="value" id="humValue">--</div>
-    <canvas id="humChart"></canvas>
-  </div>
+    <!-- Header -->
+    <div class="mb-10" style="animation: fadeIn 0.7s ease forwards;">
+      <div class="flex items-center justify-between flex-wrap gap-4">
+        <div>
+          <p class="text-xs font-mono tracking-[0.22em] uppercase mb-1" style="color: rgba(62,192,99,0.65);">
+            Sistema de Monitoramento
+          </p>
+          <h1 class="text-white font-display font-extrabold text-4xl tracking-tight leading-none">
+            🌱 Greenhouse
+          </h1>
+        </div>
 
-  <div class="panel">
-    <h3>🌿 Soil Moisture (%)</h3>
-    <div class="value" id="soilValue">--</div>
-    <canvas id="soilChart"></canvas>
-
-    <div class="setpoint-container">
-      <label for="soilSetpoint">Setpoint:</label>
-      <div class="setpoint-input-wrapper">
-        <input
-          type="text"
-          id="soilSetpoint"
-          inputmode="decimal"
-          placeholder="0–100"
-          value="70"
-          maxlength="6"
-          oninput="handleSetpointInput(this)"
-          onblur="handleSetpointBlur(this)"
-          onfocus="handleSetpointFocus(this)"
-        />
-        <span class="pct-symbol" id="pctSymbol">%</span>
+        <!-- Status pill -->
+        <div class="card flex items-center gap-3 px-4 py-3">
+          <span class="status-dot connecting" id="statusDot"></span>
+          <span class="text-sm font-mono" style="color: #aeeabc;" id="statusText">Conectando...</span>
+          <span class="badge" id="statusTime">—</span>
+        </div>
       </div>
-      <button onclick="sendSetpoint()">Aplicar</button>
+      <div class="shimmer-line mt-6"></div>
     </div>
-    <div class="setpoint-feedback" id="setpointFeedback"></div>
+
+    <!-- Sensor grid -->
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+
+      <!-- Temperature -->
+      <div class="card p-6" style="animation: slideUp 0.5s ease 0.1s both forwards;">
+        <div class="flex items-center justify-between mb-5">
+          <div class="flex items-center gap-3">
+            <div class="icon-pill">🌡</div>
+            <div>
+              <p class="text-xs font-mono tracking-widest uppercase" style="color: rgba(62,192,99,0.6);">Temperatura</p>
+              <p class="text-sm font-display font-semibold" style="color: #aeeabc;">Ar Ambiente</p>
+            </div>
+          </div>
+          <span class="badge">°C</span>
+        </div>
+
+        <div class="big-value temp-color mb-5" id="tempValue">--</div>
+        <div class="chart-wrapper"><canvas id="tempChart"></canvas></div>
+      </div>
+
+      <!-- Humidity -->
+      <div class="card p-6" style="animation: slideUp 0.5s ease 0.2s both forwards;">
+        <div class="flex items-center justify-between mb-5">
+          <div class="flex items-center gap-3">
+            <div class="icon-pill">💧</div>
+            <div>
+              <p class="text-xs font-mono tracking-widest uppercase" style="color: rgba(62,192,99,0.6);">Umidade</p>
+              <p class="text-sm font-display font-semibold" style="color: #aeeabc;">Ar Ambiente</p>
+            </div>
+          </div>
+          <span class="badge">%</span>
+        </div>
+
+        <div class="big-value hum-color mb-5" id="humValue">--</div>
+        <div class="chart-wrapper"><canvas id="humChart"></canvas></div>
+      </div>
+
+      <!-- Soil Moisture -->
+      <div class="card p-6" style="animation: slideUp 0.5s ease 0.3s both forwards;">
+        <div class="flex items-center justify-between mb-5">
+          <div class="flex items-center gap-3">
+            <div class="icon-pill">🌿</div>
+            <div>
+              <p class="text-xs font-mono tracking-widest uppercase" style="color: rgba(62,192,99,0.6);">Umidade</p>
+              <p class="text-sm font-display font-semibold" style="color: #aeeabc;">Solo</p>
+            </div>
+          </div>
+          <span class="badge">%</span>
+        </div>
+
+        <div class="big-value mb-5" id="soilValue">--</div>
+        <div class="chart-wrapper"><canvas id="soilChart"></canvas></div>
+
+        <hr class="soft-divider">
+
+        <!-- Setpoint control -->
+        <div>
+          <p class="text-xs font-mono tracking-widest uppercase mb-3" style="color: rgba(62,192,99,0.6);">
+            Setpoint de Irrigação
+          </p>
+          <div class="flex items-center gap-3">
+            <div class="relative">
+              <input
+                type="text"
+                id="soilSetpoint"
+                class="setpoint-input"
+                inputmode="decimal"
+                placeholder="0 – 100"
+                value="70"
+                maxlength="6"
+                oninput="handleSetpointInput(this)"
+                onblur="handleSetpointBlur(this)"
+                onfocus="handleSetpointFocus(this)"
+              />
+              <span
+                id="pctSymbol"
+                class="absolute right-3 top-1/2 -translate-y-1/2 text-sm font-mono pointer-events-none hidden"
+                style="color: rgba(174,234,188,0.5);"
+              >%</span>
+            </div>
+            <button class="apply-btn" onclick="sendSetpoint()">Aplicar</button>
+          </div>
+          <p id="setpointFeedback" class="font-mono text-xs mt-2 transition-all" style="min-height:16px;"></p>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Footer -->
+    <p class="text-center font-mono text-xs mt-10 tracking-[0.18em]" style="color: rgba(62,192,99,0.28);">
+      GREENHOUSE MONITORING SYSTEM · v2.0
+    </p>
   </div>
-</div>
 
 <script>
-const client = io('http://localhost:3000');
+  // ── Socket.IO ──────────────────────────────────────────────────────────────
+  const client = io('http://localhost:3000');
 
-const tempChart = createChart("tempChart", "Temperature")
-const humChart = createChart("humChart", "Humidity")
-const soilChart = createChart("soilChart", "Soil Moisture")
+  client.on('connect',      () => setStatus('connected',    'Conectado ✅'));
+  client.on('reconnecting', () => setStatus('connecting',   'Reconectando…'));
+  client.on('disconnect',   () => setStatus('disconnected', 'Desconectado ❌'));
+  client.on('error',        () => setStatus('disconnected', 'Erro de Conexão ❌'));
 
-function createChart(id, label) {
-  return new Chart(document.getElementById(id), {
-    type: 'line',
-    data: {
-      labels: [],
-      datasets: [{
-        label: label,
-        data: [],
-        tension: 0.3
-      }]
-    },
-    options: {
-      animation: false,
-      responsive: true,
-      scales: {
-        y: { beginAtZero: true }
+  client.on('sensor-update', ({ air, soil }) => {
+    setValue('tempValue', air.temperature, '°C');
+    updateChart(tempChart, air.temperature);
+
+    setValue('humValue', air.humidity, '%');
+    updateChart(humChart, air.humidity);
+
+    setValue('soilValue', soil.humidity, '%');
+    updateChart(soilChart, soil.humidity);
+  });
+
+  function setStatus(state, text) {
+    const dot  = document.getElementById('statusDot');
+    const span = document.getElementById('statusText');
+    const time = document.getElementById('statusTime');
+    dot.className = 'status-dot ' + state;
+    span.textContent = text;
+    time.textContent = new Date().toLocaleTimeString('pt-BR');
+  }
+
+  function setValue(id, val, unit) {
+    document.getElementById(id).textContent = val + unit;
+  }
+
+  // ── Charts ─────────────────────────────────────────────────────────────────
+  Chart.defaults.color = 'rgba(174,234,188,0.5)';
+  Chart.defaults.borderColor = 'rgba(62,192,99,0.07)';
+
+  function createChart(id, label, lineColor, gradientStart) {
+    return new Chart(document.getElementById(id), {
+      type: 'line',
+      data: {
+        labels: [],
+        datasets: [{
+          label,
+          data: [],
+          tension: 0.42,
+          borderColor: lineColor,
+          borderWidth: 2,
+          pointRadius: 0,
+          pointHoverRadius: 4,
+          pointHoverBackgroundColor: lineColor,
+          fill: true,
+          backgroundColor: (ctx) => {
+            const g = ctx.chart.ctx.createLinearGradient(0, 0, 0, 170);
+            g.addColorStop(0, gradientStart);
+            g.addColorStop(1, 'rgba(0,0,0,0)');
+            return g;
+          }
+        }]
+      },
+      options: {
+        animation: false,
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: { intersect: false, mode: 'index' },
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            backgroundColor: 'rgba(10,22,11,0.9)',
+            borderColor: 'rgba(62,192,99,0.25)',
+            borderWidth: 1,
+            titleFont: { family: 'DM Mono', size: 11 },
+            bodyFont:  { family: 'DM Mono', size: 13 },
+            titleColor: 'rgba(174,234,188,0.6)',
+            bodyColor: '#aeeabc',
+            padding: 10,
+          }
+        },
+        scales: {
+          x: { display: false },
+          y: {
+            grid: { color: 'rgba(62,192,99,0.06)' },
+            beginAtZero: false,
+            ticks: {
+              font: { family: 'DM Mono', size: 10 },
+              color: 'rgba(174,234,188,0.4)',
+              maxTicksLimit: 4,
+            }
+          }
+        }
       }
+    });
+  }
+
+  const tempChart = createChart('tempChart', 'Temperatura', '#f87a38', 'rgba(248,122,56,0.22)');
+  const humChart  = createChart('humChart',  'Umidade Ar',  '#38b2f8', 'rgba(56,178,248,0.18)');
+  const soilChart = createChart('soilChart', 'Solo',        '#3ec063', 'rgba(62,192,99,0.2)');
+
+  function updateChart(chart, value) {
+    chart.data.labels.push(new Date().toLocaleTimeString('pt-BR'));
+    chart.data.datasets[0].data.push(value);
+    if (chart.data.labels.length > 25) {
+      chart.data.labels.shift();
+      chart.data.datasets[0].data.shift();
     }
-  })
-}
-
-function updateChart(chart, value) {
-  chart.data.labels.push(new Date().toLocaleTimeString())
-  chart.data.datasets[0].data.push(value)
-
-  if (chart.data.labels.length > 20) {
-    chart.data.labels.shift()
-    chart.data.datasets[0].data.shift()
+    chart.update();
   }
 
-  chart.update()
-}
-
-function sendSetpoint() {
-  const feedback = document.getElementById("setpointFeedback")
-  const raw = document.getElementById("soilSetpoint").value
-  // Replace comma with dot for parsing (Brazilian decimal separator)
-  const normalized = raw.replace(",", ".")
-  const value = parseFloat(normalized)
-
-  if (isNaN(value) || value < 0 || value > 100) {
-    feedback.style.color = "#e53935"
-    feedback.innerText = "⚠️ Insira um valor entre 0 e 100."
-    return
+  // ── Setpoint ───────────────────────────────────────────────────────────────
+  function setPctVisible(show) {
+    const sym = document.getElementById('pctSymbol');
+    sym.classList.toggle('hidden', !show);
+    sym.classList.toggle('inline-block', show);
   }
 
-  client.emit("setpoint-config", { setpoint: value })
+  function handleSetpointInput(el) {
+    // Allow only digits, comma and dot
+    el.value = el.value.replace(/[^0-9.,]/g, '');
 
-  feedback.style.color = "#4caf50"
-  feedback.innerText = `✅ Setpoint enviado: ${raw}%`
+    // Keep only first decimal separator; limit to 2 decimal places
+    const sepIdx = el.value.search(/[.,]/);
+    if (sepIdx !== -1) {
+      const intPart  = el.value.slice(0, sepIdx + 1);           // includes separator
+      const decPart  = el.value.slice(sepIdx + 1).replace(/[.,]/g, '').slice(0, 2);
+      el.value = intPart + decPart;
+    }
 
-  setTimeout(() => { feedback.innerText = "" }, 3000)
-}
+    setPctVisible(el.value.length > 0);
+  }
 
-function setPctVisible(show) {
-  document.getElementById("pctSymbol").style.display = show ? "inline-block" : "none"
-}
+  function handleSetpointBlur(el) {
+    // Display comma as decimal separator
+    el.value = el.value.replace('.', ',');
+    setPctVisible(el.value.length > 0);
+  }
 
-function handleSetpointInput(el) {
-  // Remove anything that isn't a digit, comma or dot
-  el.value = el.value.replace(/[^0-9.,]/g, "")
+  function handleSetpointFocus(el) {
+    setPctVisible(el.value.length > 0);
+  }
 
-  // Keep only the first decimal separator
-  el.value = el.value.replace(/([.,])([^.,]*)([.,])/g, "$1$2")
+  function sendSetpoint() {
+    const input    = document.getElementById('soilSetpoint');
+    const raw      = input.value.trim();
 
-  setPctVisible(el.value.length > 0)
-}
+    if (!raw) {
+      showFeedback('⚠️ Insira um valor para o setpoint.', false);
+      return;
+    }
 
-function handleSetpointBlur(el) {
-  // Normalize dot → comma for display consistency
-  el.value = el.value.replace(".", ",")
-  setPctVisible(el.value.length > 0)
-}
+    const normalized = raw.replace(',', '.');
+    let value = parseFloat(normalized);
 
-function handleSetpointFocus(el) {
-  setPctVisible(el.value.length > 0)
-}
+    if (isNaN(value)) {
+      showFeedback('⚠️ Valor inválido. Use apenas números.', false);
+      return;
+    }
 
-client.on("connect", () => {
-  document.getElementById("status").innerText = "Connected ✅"
-})
+    // Clamp to [0, 100]
+    let clamped = false;
+    if (value > 100) { value = 100; clamped = true; }
+    if (value < 0)   { value = 0;   clamped = true; }
 
-client.on("reconnect", () => {
-  document.getElementById("status").innerText = "Reconnecting..."
-})
+    // Update displayed value if clamped
+    if (clamped) {
+      input.value = String(value).replace('.', ',');
+    }
 
-client.on("error", () => {
-  document.getElementById("status").innerText = "Connection Error ❌"
-})
+    client.emit('setpoint-config', { setpoint: value });
 
-client.on("sensor-update", (message) => {
-  const { air, soil } = message
+    const display = String(value).replace('.', ',');
+    const note    = clamped ? ' (ajustado automaticamente)' : '';
+    showFeedback(`✅ Setpoint enviado: ${display}%${note}`, true);
+  }
 
-  document.getElementById("tempValue").innerText = air.temperature + "°C"
-  updateChart(tempChart, air.temperature)
-
-  document.getElementById("humValue").innerText = air.humidity + "%"
-  updateChart(humChart, air.humidity)
-  
-  document.getElementById("soilValue").innerText = soil.humidity + " %"
-  updateChart(soilChart, soil.humidity)
-})
+  function showFeedback(msg, ok) {
+    const el = document.getElementById('setpointFeedback');
+    el.className = 'font-mono text-xs mt-2 transition-all ' + (ok ? 'feedback-ok' : 'feedback-err');
+    el.textContent = msg;
+    clearTimeout(el._t);
+    el._t = setTimeout(() => { el.textContent = ''; }, 4000);
+  }
 </script>
-
 </body>
 </html>

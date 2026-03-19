@@ -72,12 +72,10 @@ void callback(char* topic, byte* payload, unsigned int length) {
     return;
   }
 
-  if (doc.containsKey("temperatureLimit")) {
-
-    temperatureLimit = doc["temperatureLimit"];
-
-    Serial.print("Temperature Limit received: ");
-    Serial.println(temperatureLimit);
+  if (doc.containsKey("setpoint")) {
+    soilSetpoint = doc["setpoint"];
+    Serial.print("Soil Setpoint received: ");
+    Serial.println(soilSetpoint);
   }
 }
 
@@ -195,6 +193,7 @@ void loop() {
 
     Serial.printf("[AIR] Temp: %.2f | Humidity: %.2f\n", currentTemperature, currentHumidity);
     Serial.printf("[SOIL] Humidity: %.2f\n", currentSoilHumidity);
+    Serial.printf("[PID] Setpoint: %.2f\n", soilSetpoint);
     Serial.printf("[PID] Output: %.2f\n", pidOutput);
 
     StaticJsonDocument<200> sensorsMessage;

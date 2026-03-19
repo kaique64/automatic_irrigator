@@ -9,6 +9,7 @@ import { SensorService } from './services/sensor.service';
 import { SetpointConfigService } from './services/setpoint-config.service';
 import { SetpointConfigRepository } from './repositories/setpoint-config.repository';
 import { SetpointConfig } from './entities/setpoint-config.entity';
+import { ClientsModule, Transport } from '@nestjs/microservices';
 
 @Module({
   imports: [

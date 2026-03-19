@@ -29,6 +29,10 @@ export class SetpointConfigService implements SetpointConfigServiceInterface {
       await this.setpointConfigRepository.save(setpoint);
 
       await this.mqttService.publish(this.SETPOINT_QUEUE, setpoint);
+
+      this.logger.log(
+        `Published setpoint to MQTT: ${JSON.stringify(setpoint)}`,
+      );
     } catch (err) {
       this.logger.error('Error updating setpoing config', err);
 

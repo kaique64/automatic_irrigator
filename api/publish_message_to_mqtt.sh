@@ -1,7 +1,7 @@
 #!/bin/bash
 
 NUM_MESSAGES=${1:-10}
-MAX_THREADS=5
+MAX_THREADS=15
 
 send_message() {
   local i=$1

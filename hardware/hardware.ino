@@ -94,11 +94,11 @@ void setup() {
   WiFi.disconnect(true);
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
 
-  int tentativas = 0;
-  while (WiFi.status() != WL_CONNECTED && tentativas < 40) {
+  int attempts = 0;
+  while (WiFi.status() != WL_CONNECTED && attempts < 40) {
     delay(500);
     Serial.print(".");
-    tentativas++;
+    attempts++;
   }
 
   if (WiFi.status() != WL_CONNECTED) {

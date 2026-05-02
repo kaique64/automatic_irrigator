@@ -90,11 +90,22 @@ void setup() {
 
   ledcAttach(WATER_PUMP_PWM_PIN, pwmFrequency, pwmResolution);
 
+  WiFi.mode(WIFI_STA);
+  WiFi.disconnect(true);
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
 
-  while (WiFi.status() != WL_CONNECTED) {
+  int tentativas = 0;
+  while (WiFi.status() != WL_CONNECTED && tentativas < 40) {
     delay(500);
     Serial.print(".");
+    tentativas++;
+  }
+
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.println("\Failed to connect WiFi! Status: " + String(WiFi.status()));
+    Serial.println("Reseting em 3s...");
+    delay(3000);
+    ESP.restart();
   }
 
   Serial.println("WiFi connected");

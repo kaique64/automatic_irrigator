@@ -27,6 +27,11 @@ export class SensorDataBuilder {
     return this;
   }
 
+  withSensorDataMomentId(sensorDataMomentId: string | null): this {
+    this.sensorData.sensorDataMomentId = sensorDataMomentId;
+    return this;
+  }
+
   withTemperature(temperature: number | null): this {
     this.sensorData.temperature = temperature;
     return this;

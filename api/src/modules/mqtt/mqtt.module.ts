@@ -28,6 +28,7 @@ export class MqttModule {
               clean: true,
               clientId: `mqtt-client-${Math.random().toString(16).slice(2, 10)}`,
               resubscribe: true,
+              rejectUnauthorized: false,
             },
           },
         ]),

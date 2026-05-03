@@ -6,6 +6,9 @@
   <title>Greenhouse Dashboard</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/hammerjs@2.0.8/hammer.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
   <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
   <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet">
 
@@ -127,7 +130,25 @@
     @keyframes shimmer { 0% { background-position: -200% center; } 100% { background-position: 200% center; } }
 
     /* Chart canvas */
-    .chart-wrapper canvas { width: 100% !important; height: 170px !important; }
+    .chart-wrapper canvas { width: 100% !important; height: 170px !important; cursor: crosshair; }
+    #sensorGrid.charts-expanded { grid-template-columns: 1fr !important; }
+    .charts-expanded .chart-wrapper canvas { height: 320px !important; }
+
+    /* Reset zoom button */
+    .reset-zoom-btn {
+      font-family: 'DM Mono', monospace;
+      font-size: 11px; font-weight: 500; letter-spacing: 0.08em;
+      padding: 6px 14px; border-radius: 8px;
+      border: 1px solid rgba(248,139,56,0.45);
+      background: rgba(248,122,56,0.08);
+      color: rgba(248,172,80,0.9);
+      cursor: pointer;
+      transition: background 0.2s, border-color 0.2s;
+    }
+    .reset-zoom-btn:hover {
+      background: rgba(248,122,56,0.16);
+      border-color: rgba(248,139,56,0.7);
+    }
 
     /* Setpoint input */
     .setpoint-input {
@@ -182,6 +203,44 @@
     /* Feedback */
     .feedback-ok  { color: #4ade80; }
     .feedback-err { color: #f87171; }
+
+    /* Time filter bar */
+    .filter-bar {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+    .filter-btn {
+      font-family: 'DM Mono', monospace;
+      font-size: 11px;
+      font-weight: 500;
+      letter-spacing: 0.08em;
+      padding: 6px 14px;
+      border-radius: 8px;
+      border: 1px solid rgba(62, 192, 99, 0.22);
+      background: rgba(13, 26, 14, 0.6);
+      color: rgba(174, 234, 188, 0.6);
+      cursor: pointer;
+      transition: background 0.2s, border-color 0.2s, color 0.2s;
+    }
+    .filter-btn:hover {
+      border-color: rgba(62, 192, 99, 0.5);
+      color: #aeeabc;
+    }
+    .filter-btn.active {
+      background: rgba(62, 192, 99, 0.15);
+      border-color: rgba(62, 192, 99, 0.65);
+      color: #77d892;
+    }
+    .filter-label {
+      font-family: 'DM Mono', monospace;
+      font-size: 10px;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: rgba(62, 192, 99, 0.5);
+      margin-right: 4px;
+    }
   </style>
 </head>
 <body class="min-h-screen relative">
@@ -213,8 +272,30 @@
       <div class="shimmer-line mt-6"></div>
     </div>
 
+    <!-- Time filter bar -->
+    <div class="mb-8 flex items-center justify-between flex-wrap gap-3" style="animation: fadeIn 0.7s ease 0.15s both forwards;">
+      <div class="flex items-center gap-4 flex-wrap">
+        <span class="filter-label">Período</span>
+        <div class="filter-bar" id="filterBar">
+          <button class="filter-btn active" data-hours="live">Ao Vivo</button>
+          <button class="filter-btn" data-hours="1">1h</button>
+          <button class="filter-btn" data-hours="2">2h</button>
+          <button class="filter-btn" data-hours="4">4h</button>
+          <button class="filter-btn" data-hours="8">8h</button>
+          <button class="filter-btn" data-hours="12">12h</button>
+          <button class="filter-btn" data-hours="24">24h</button>
+          <button class="filter-btn" data-hours="48">48h</button>
+          <button class="filter-btn" data-hours="72">72h</button>
+        </div>
+      </div>
+      <div class="flex items-center gap-3">
+        <button id="resetZoomBtn" class="reset-zoom-btn" onclick="resetAllZoom()" style="display:none;">↺ Resetar Zoom</button>
+        <button id="expandBtn" class="reset-zoom-btn" onclick="toggleExpand()">⤢ Expandir</button>
+      </div>
+    </div>
+
     <!-- Sensor grid -->
-    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+    <div id="sensorGrid" class="grid grid-cols-1 md:grid-cols-3 gap-6">
 
       <!-- Temperature -->
       <div class="card p-6" style="animation: slideUp 0.5s ease 0.1s both forwards;">
@@ -308,23 +389,45 @@
   </div>
 
 <script>
-  // ── Socket.IO ──────────────────────────────────────────────────────────────
-  const client = io('http://localhost:3000');
+  // ── Config ─────────────────────────────────────────────────────────────────
+  const API_BASE = 'http://localhost:3000';
+  let activeHours = null; // null = live mode (no historical filter)
 
-  client.on('connect',      () => setStatus('connected',    'Conectado ✅'));
+  // ── Socket.IO ──────────────────────────────────────────────────────────────
+  const client = io(API_BASE);
+
+  client.on('connect', () => {
+    setStatus('connected', 'Conectado ✅');
+    loadSetpointConfig();
+  });
   client.on('reconnecting', () => setStatus('connecting',   'Reconectando…'));
   client.on('disconnect',   () => setStatus('disconnected', 'Desconectado ❌'));
   client.on('error',        () => setStatus('disconnected', 'Erro de Conexão ❌'));
 
   client.on('sensor-update', ({ air, soil }) => {
-    setValue('tempValue', air.temperature, '°C');
-    updateChart(tempChart, air.temperature);
+    if (activeHours !== null) return; // historical filter active — values and charts frozen
 
-    setValue('humValue', air.humidity, '%');
-    updateChart(humChart, air.humidity);
+    if (air) {
+      setValue('tempValue', air.temperature, '°C');
+      setValue('humValue',  air.humidity,    '%');
+    }
+    if (soil) {
+      setValue('soilValue', soil.humidity, '%');
+    }
 
-    setValue('soilValue', soil.humidity, '%');
-    updateChart(soilChart, soil.humidity);
+    const now = Date.now();
+    const pt  = new Date(now);
+    const maxAge = now - 3600000;
+
+    tempChart.data.datasets[0].data.push({ x: pt, y: air?.temperature ?? null });
+    humChart.data.datasets[0].data.push({ x: pt, y: air?.humidity    ?? null });
+    soilChart.data.datasets[0].data.push({ x: pt, y: soil?.humidity  ?? null });
+
+    [tempChart, humChart, soilChart].forEach(c => {
+      const data = c.data.datasets[0].data;
+      while (data.length > 0 && data[0].x < maxAge) data.shift();
+      c.update('none');
+    });
   });
 
   function setStatus(state, text) {
@@ -337,7 +440,7 @@
   }
 
   function setValue(id, val, unit) {
-    document.getElementById(id).textContent = val + unit;
+    document.getElementById(id).textContent = val != null ? Number(val).toFixed(1) + unit : '--';
   }
 
   // ── Charts ─────────────────────────────────────────────────────────────────
@@ -348,7 +451,6 @@
     return new Chart(document.getElementById(id), {
       type: 'line',
       data: {
-        labels: [],
         datasets: [{
           label,
           data: [],
@@ -383,10 +485,49 @@
             titleColor: 'rgba(174,234,188,0.6)',
             bodyColor: '#aeeabc',
             padding: 10,
+            callbacks: {
+              title: (items) => {
+                if (!items.length) return '';
+                const d = new Date(items[0].parsed.x);
+                if (activeHours <= 4)
+                  return d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+                return d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })
+                  + ' ' + d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+              }
+            }
+          },
+          zoom: {
+            zoom: {
+              drag: {
+                enabled: true,
+                backgroundColor: 'rgba(62,192,99,0.08)',
+                borderColor: 'rgba(62,192,99,0.4)',
+                borderWidth: 1,
+              },
+              mode: 'x',
+              onZoomComplete({ chart }) { syncZoom(chart); }
+            }
           }
         },
         scales: {
-          x: { display: false },
+          x: {
+            type: 'time',
+            display: true,
+            time: {
+              displayFormats: {
+                minute: 'HH:mm',
+                hour: 'dd/MM HH:mm',
+                day: 'dd/MM',
+              }
+            },
+            grid: { color: 'rgba(62,192,99,0.06)' },
+            ticks: {
+              font: { family: 'DM Mono', size: 10 },
+              color: 'rgba(174,234,188,0.4)',
+              maxTicksLimit: 6,
+              maxRotation: 0,
+            }
+          },
           y: {
             grid: { color: 'rgba(62,192,99,0.06)' },
             beginAtZero: false,
@@ -405,15 +546,106 @@
   const humChart  = createChart('humChart',  'Umidade Ar',  '#38b2f8', 'rgba(56,178,248,0.18)');
   const soilChart = createChart('soilChart', 'Solo',        '#3ec063', 'rgba(62,192,99,0.2)');
 
-  function updateChart(chart, value) {
-    chart.data.labels.push(new Date().toLocaleTimeString('pt-BR'));
-    chart.data.datasets[0].data.push(value);
-    if (chart.data.labels.length > 25) {
-      chart.data.labels.shift();
-      chart.data.datasets[0].data.shift();
-    }
-    chart.update();
+  function setChartData(chart, points) {
+    chart.data.datasets[0].data = points;
+    chart.update('none');
   }
+
+  function upsertBucket(chart, bucketDate, value) {
+    const data = chart.data.datasets[0].data;
+    if (data.length > 0 && data[data.length - 1].x.getTime() === bucketDate.getTime()) {
+      data[data.length - 1].y = value;
+    } else {
+      data.push({ x: bucketDate, y: value });
+    }
+  }
+
+  // ── Zoom ──────────────────────────────────────────────────────────────────
+  function syncZoom(sourceChart) {
+    const { min, max } = sourceChart.scales.x;
+    [tempChart, humChart, soilChart].forEach(c => {
+      if (c === sourceChart) return;
+      c.zoomScale('x', { min, max }, 'none');
+    });
+    document.getElementById('resetZoomBtn').style.display = '';
+  }
+
+  function resetAllZoom() {
+    [tempChart, humChart, soilChart].forEach(c => c.resetZoom());
+    document.getElementById('resetZoomBtn').style.display = 'none';
+  }
+
+  // ── Historical data ────────────────────────────────────────────────────────
+  let loadingController = null;
+
+  async function loadHistoricalData(hours) {
+    resetAllZoom();
+    if (loadingController) loadingController.abort();
+    loadingController = new AbortController();
+
+    setChartData(tempChart, []);
+    setChartData(humChart,  []);
+    setChartData(soilChart, []);
+
+    try {
+      const res = await fetch(`${API_BASE}/sensor-data/history?hours=${hours}`,
+        { signal: loadingController.signal });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const { points, average } = await res.json();
+
+      const tempData = [], humData = [], soilData = [];
+      for (const point of points) {
+        const ts = new Date(point.timestamp);
+        tempData.push({ x: ts, y: point.air?.temperature ?? null });
+        humData.push({ x: ts, y: point.air?.humidity    ?? null });
+        soilData.push({ x: ts, y: point.soil?.humidity  ?? null });
+      }
+
+      setChartData(tempChart, tempData);
+      setChartData(humChart,  humData);
+      setChartData(soilChart, soilData);
+
+      const baseMin = Date.now() - hours * 3600000;
+      [tempChart, humChart, soilChart].forEach(c => {
+        c.options.scales.x.min = baseMin;
+        c.options.scales.x.max = undefined;
+        c.update('none');
+      });
+
+      setValue('tempValue', average.air.temperature, '°C');
+      setValue('humValue',  average.air.humidity,    '%');
+      setValue('soilValue', average.soil.humidity,   '%');
+    } catch (err) {
+      if (err.name === 'AbortError') return;
+      console.error('Failed to load historical data:', err);
+    }
+  }
+
+  // ── Filter bar ─────────────────────────────────────────────────────────────
+  document.getElementById('filterBar').addEventListener('click', (e) => {
+    const btn = e.target.closest('.filter-btn');
+    if (!btn) return;
+
+    document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+
+    if (btn.dataset.hours === 'live') {
+      activeHours = null;
+      if (loadingController) { loadingController.abort(); loadingController = null; }
+      setChartData(tempChart, []);
+      setChartData(humChart,  []);
+      setChartData(soilChart, []);
+      [tempChart, humChart, soilChart].forEach(c => {
+        c.options.scales.x.min = undefined;
+        c.update('none');
+      });
+    } else {
+      activeHours = parseInt(btn.dataset.hours, 10);
+      loadHistoricalData(activeHours);
+    }
+  });
+
+  // Live mode: x.min is managed per-event; no initial load needed
 
   // ── Setpoint ───────────────────────────────────────────────────────────────
   function setPctVisible(show) {
@@ -423,22 +655,17 @@
   }
 
   function handleSetpointInput(el) {
-    // Allow only digits, comma and dot
     el.value = el.value.replace(/[^0-9.,]/g, '');
-
-    // Keep only first decimal separator; limit to 2 decimal places
     const sepIdx = el.value.search(/[.,]/);
     if (sepIdx !== -1) {
-      const intPart  = el.value.slice(0, sepIdx + 1);           // includes separator
-      const decPart  = el.value.slice(sepIdx + 1).replace(/[.,]/g, '').slice(0, 2);
+      const intPart = el.value.slice(0, sepIdx + 1);
+      const decPart = el.value.slice(sepIdx + 1).replace(/[.,]/g, '').slice(0, 2);
       el.value = intPart + decPart;
     }
-
     setPctVisible(el.value.length > 0);
   }
 
   function handleSetpointBlur(el) {
-    // Display comma as decimal separator
     el.value = el.value.replace('.', ',');
     setPctVisible(el.value.length > 0);
   }
@@ -447,38 +674,48 @@
     setPctVisible(el.value.length > 0);
   }
 
-  function sendSetpoint() {
-    const input    = document.getElementById('soilSetpoint');
-    const raw      = input.value.trim();
-
-    if (!raw) {
-      showFeedback('⚠️ Insira um valor para o setpoint.', false);
-      return;
+  async function loadSetpointConfig() {
+    try {
+      const res = await fetch(`${API_BASE}/setpoint-config`);
+      const value = res.ok ? (await res.json()).setpoint : 70;
+      const input = document.getElementById('soilSetpoint');
+      input.value = String(value).replace('.', ',');
+      client.emit('setpoint-config', { setpoint: value });
+    } catch {
+      client.emit('setpoint-config', { setpoint: 70 });
     }
+  }
+
+  function sendSetpoint() {
+    const input = document.getElementById('soilSetpoint');
+    const raw   = input.value.trim();
+
+    if (!raw) { showFeedback('⚠️ Insira um valor para o setpoint.', false); return; }
 
     const normalized = raw.replace(',', '.');
     let value = parseFloat(normalized);
 
-    if (isNaN(value)) {
-      showFeedback('⚠️ Valor inválido. Use apenas números.', false);
-      return;
-    }
+    if (isNaN(value)) { showFeedback('⚠️ Valor inválido. Use apenas números.', false); return; }
 
-    // Clamp to [0, 100]
     let clamped = false;
     if (value > 100) { value = 100; clamped = true; }
     if (value < 0)   { value = 0;   clamped = true; }
 
-    // Update displayed value if clamped
-    if (clamped) {
-      input.value = String(value).replace('.', ',');
-    }
+    if (clamped) input.value = String(value).replace('.', ',');
 
     client.emit('setpoint-config', { setpoint: value });
 
     const display = String(value).replace('.', ',');
     const note    = clamped ? ' (ajustado automaticamente)' : '';
     showFeedback(`✅ Setpoint enviado: ${display}%${note}`, true);
+  }
+
+  function toggleExpand() {
+    const grid = document.getElementById('sensorGrid');
+    const btn  = document.getElementById('expandBtn');
+    const expanded = grid.classList.toggle('charts-expanded');
+    btn.textContent = expanded ? '⤡ Recolher' : '⤢ Expandir';
+    [tempChart, humChart, soilChart].forEach(c => c.resize());
   }
 
   function showFeedback(msg, ok) {

@@ -30,8 +30,9 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
         keepalive: process.env.MQTT_BROKER_KEEP_ALIVE
           ? parseInt(process.env.MQTT_BROKER_KEEP_ALIVE)
           : 60,
-        clean: true,
-        clientId: `nest-mqtt-client-${Math.random().toString(16).slice(2, 10)}`,
+        clean: false,
+        rejectUnauthorized: false,
+        clientId: process.env.MQTT_PUBLISHER_CLIENT_ID || 'automatic-irrigator-pub',
       };
 
       const brokerUrl = process.env.MQTT_BROKER_URL || 'mqtt://localhost:1883';
@@ -77,7 +78,7 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
 
       this.logger.log(`Publishing to ${topic}: ${payload}`);
 
-      this.client.publish(topic, payload, { qos: 1 }, (error) => {
+      this.client.publish(topic, payload, { qos: 2 }, (error) => {
         if (error) {
           this.logger.error(`Failed to publish to ${topic}:`, error);
           reject(error);
@@ -100,7 +101,7 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
         return reject(error);
       }
 
-      this.client.subscribe(topic, { qos: 1 }, (error) => {
+      this.client.subscribe(topic, { qos: 2 }, (error) => {
         if (error) {
           this.logger.error(`Failed to subscribe to ${topic}:`, error);
           reject(error);

@@ -5,6 +5,7 @@ import { MqttService } from 'src/modules/mqtt/services/mqtt.service';
 import { SetpointConfigRepository } from '../repositories/setpoint-config.repository';
 import { SetpointConfigMapper } from '../mappers/setpoint-config.mapper';
 import { EventsGateway } from '../gateways/events.gateway';
+import { SetpointConfig } from '../entities/setpoint-config.entity';
 
 @Injectable()
 export class SetpointConfigService implements SetpointConfigServiceInterface {
@@ -19,6 +20,10 @@ export class SetpointConfigService implements SetpointConfigServiceInterface {
     private readonly eventsGateway: EventsGateway,
     private readonly mqttService: MqttService,
   ) {}
+
+  async getSetpointConfig(): Promise<SetpointConfig | null> {
+    return this.setpointConfigRepository.getCurrentSetpoint();
+  }
 
   async updateSetpointConfig(
     setpointConfigMessage: SetpoingConfigMessage,

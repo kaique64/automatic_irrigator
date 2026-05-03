@@ -25,6 +25,9 @@ export class SensorData {
   @Column({ type: 'decimal', precision: 5, scale: 2, nullable: true })
   humidity: number;
 
+  @Column({ type: 'varchar', length: 255, nullable: true, name: 'sensor_data_moment_id' })
+  sensorDataMomentId: string | null;
+
   @Column({ type: 'jsonb', nullable: true, name: 'raw_data' })
   rawData: SensorMessage;
 

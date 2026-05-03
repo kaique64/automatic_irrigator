@@ -8,6 +8,8 @@ async function bootstrap() {
 
   const app = await NestFactory.create(AppModule);
 
+  app.enableCors(); // file:// origin requires wildcard in local development
+
   app.connectMicroservice<MicroserviceOptions>({
     transport: Transport.MQTT,
     options: {
@@ -23,9 +25,13 @@ async function bootstrap() {
       keepalive: process.env.MQTT_BROKER_KEEP_ALIVE
         ? parseInt(process.env.MQTT_BROKER_KEEP_ALIVE)
         : 60,
-      clean: true,
-      clientId: `automatic-irrigator-${Math.random().toString(16).slice(2, 10)}`,
+      clean: false,
+      clientId: process.env.MQTT_SUBSCRIBER_CLIENT_ID || 'automatic-irrigator-sub',
+      rejectUnauthorized: false,
       resubscribe: true,
+      subscribeOptions: {
+        qos: 2,
+      },
     },
   });
 

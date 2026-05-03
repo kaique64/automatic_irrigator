@@ -42,4 +42,22 @@ export class SensorController {
     }
     return this.sensorService.getHistoricalData(hours);
   }
+
+  @Get('sensor-data/history/range')
+  async getHistoryByRange(
+    @Query('from') from: string,
+    @Query('to') to: string,
+  ): Promise<HistoricalDataResponse> {
+    const fromDate = new Date(from);
+    const toDate   = new Date(to);
+
+    if (isNaN(fromDate.getTime()) || isNaN(toDate.getTime())) {
+      throw new BadRequestException('from and to must be valid ISO date strings');
+    }
+    if (fromDate >= toDate) {
+      throw new BadRequestException('from must be before to');
+    }
+
+    return this.sensorService.getHistoricalDataByRange(fromDate, toDate);
+  }
 }

@@ -22,6 +22,28 @@ export class SensorDataRepository implements SensorDataRepositoryInterface {
     return this.dataSource.getRepository(SensorData).save(sensorData);
   }
 
+  async findByDateRange(from: Date, to: Date): Promise<RawBucketRow[]> {
+    const diffHours = (to.getTime() - from.getTime()) / 3_600_000;
+    let bucket: string;
+    if (diffHours <= 2)  bucket = '1 minute';
+    else if (diffHours <= 12) bucket = '5 minutes';
+    else if (diffHours <= 72) bucket = '30 minutes';
+    else                      bucket = '2 hours';
+
+    return this.dataSource.query(
+      `SELECT
+        time_bucket($1::interval, timestamp) AS bucket,
+        AVG((raw_data->'air'->>'temperature')::numeric) AS air_temperature,
+        AVG((raw_data->'air'->>'humidity')::numeric)    AS air_humidity,
+        AVG((raw_data->'soil'->>'humidity')::numeric)   AS soil_humidity
+       FROM sensor_data
+       WHERE timestamp >= $2 AND timestamp <= $3
+       GROUP BY bucket
+       ORDER BY bucket ASC`,
+      [bucket, from, to],
+    );
+  }
+
   async findByTimeRange(hours: number): Promise<RawBucketRow[]> {
     const bucket = BUCKET_INTERVAL_MAP[hours];
     if (!bucket) throw new Error(`Unsupported hours value: ${hours}`);

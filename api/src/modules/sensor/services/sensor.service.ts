@@ -3,6 +3,7 @@ import { HistoricalDataPoint, HistoricalDataResponse, SensorMessage } from '../t
 import { SensorServiceInterface } from './sensor.service.interface';
 import { EventsGateway } from '../gateways/events.gateway';
 import { SensorDataRepository } from '../repositories/sensor-data.repository';
+import { RawBucketRow } from '../repositories/sensor-data.repository.interface';
 import { SensorMapper } from '../mappers/sensor.mapper';
 
 @Injectable()
@@ -36,7 +37,15 @@ export class SensorService implements SensorServiceInterface {
 
   async getHistoricalData(hours: number): Promise<HistoricalDataResponse> {
     const rows = await this.sensorDataRepository.findByTimeRange(hours);
+    return this.buildResponse(rows);
+  }
 
+  async getHistoricalDataByRange(from: Date, to: Date): Promise<HistoricalDataResponse> {
+    const rows = await this.sensorDataRepository.findByDateRange(from, to);
+    return this.buildResponse(rows);
+  }
+
+  private buildResponse(rows: RawBucketRow[]): HistoricalDataResponse {
     const points: HistoricalDataPoint[] = rows.map((row) => ({
       timestamp: new Date(row.bucket),
       air: {

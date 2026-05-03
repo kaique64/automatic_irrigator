@@ -204,6 +204,28 @@
     .feedback-ok  { color: #4ade80; }
     .feedback-err { color: #f87171; }
 
+    /* Datetime range input */
+    .datetime-input {
+      background: rgba(10, 22, 11, 0.7);
+      border: 1px solid rgba(62, 192, 99, 0.28);
+      color: #d6f5dd;
+      border-radius: 10px;
+      padding: 7px 12px;
+      font-family: 'DM Mono', monospace;
+      font-size: 12px;
+      outline: none;
+      transition: border-color .2s, box-shadow .2s;
+      color-scheme: dark;
+    }
+    .datetime-input:focus {
+      border-color: rgba(62, 192, 99, 0.75);
+      box-shadow: 0 0 0 3px rgba(62, 192, 99, 0.15);
+    }
+    .datetime-input.invalid {
+      border-color: rgba(248, 113, 113, 0.7);
+      box-shadow: 0 0 0 3px rgba(248, 113, 113, 0.12);
+    }
+
     /* Time filter bar */
     .filter-bar {
       display: flex;
@@ -292,6 +314,17 @@
         <button id="resetZoomBtn" class="reset-zoom-btn" onclick="resetAllZoom()" style="display:none;">↺ Resetar Zoom</button>
         <button id="expandBtn" class="reset-zoom-btn" onclick="toggleExpand()">⤢ Expandir</button>
       </div>
+    </div>
+
+    <!-- Date range filter -->
+    <div class="mb-8 flex items-center gap-3 flex-wrap" style="animation: fadeIn 0.7s ease 0.2s both forwards;">
+      <span class="filter-label">Intervalo</span>
+      <input type="datetime-local" id="dateFrom" class="datetime-input" />
+      <span class="filter-label" style="margin-right:0;">até</span>
+      <input type="datetime-local" id="dateTo" class="datetime-input" />
+      <button class="apply-btn" style="font-size:11px;padding:8px 16px;" onclick="applyDateRange()">Filtrar</button>
+      <button id="clearRangeBtn" class="reset-zoom-btn" onclick="clearDateRange()" style="display:none;">✕ Limpar</button>
+      <span id="rangeFeedback" class="font-mono text-xs feedback-err" style="min-height:16px;"></span>
     </div>
 
     <!-- Sensor grid -->
@@ -392,6 +425,7 @@
   // ── Config ─────────────────────────────────────────────────────────────────
   const API_BASE = 'http://localhost:3000';
   let activeHours = null; // null = live mode (no historical filter)
+  let activeRange = null; // { from: Date, to: Date } or null
 
   // ── Socket.IO ──────────────────────────────────────────────────────────────
   const client = io(API_BASE);
@@ -405,7 +439,7 @@
   client.on('error',        () => setStatus('disconnected', 'Erro de Conexão ❌'));
 
   client.on('sensor-update', ({ air, soil }) => {
-    if (activeHours !== null) return; // historical filter active — values and charts frozen
+    if (activeHours !== null || activeRange !== null) return; // filter active — values and charts frozen
 
     if (air) {
       setValue('tempValue', air.temperature, '°C');
@@ -628,6 +662,7 @@
 
     document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
     btn.classList.add('active');
+    clearRangeState();
 
     if (btn.dataset.hours === 'live') {
       activeHours = null;
@@ -708,6 +743,111 @@
     const display = String(value).replace('.', ',');
     const note    = clamped ? ' (ajustado automaticamente)' : '';
     showFeedback(`✅ Setpoint enviado: ${display}%${note}`, true);
+  }
+
+  // ── Date range filter ──────────────────────────────────────────────────────
+  function setRangeFeedback(msg) {
+    const el = document.getElementById('rangeFeedback');
+    el.textContent = msg;
+    clearTimeout(el._t);
+    if (msg) el._t = setTimeout(() => { el.textContent = ''; }, 4000);
+  }
+
+  function clearRangeState() {
+    activeRange = null;
+    document.getElementById('clearRangeBtn').style.display = 'none';
+    setRangeFeedback('');
+  }
+
+  function clearDateRange() {
+    clearRangeState();
+    document.getElementById('dateFrom').value = '';
+    document.getElementById('dateTo').value   = '';
+    document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+    document.querySelector('.filter-btn[data-hours="live"]').classList.add('active');
+    activeHours = null;
+    if (loadingController) { loadingController.abort(); loadingController = null; }
+    setChartData(tempChart, []);
+    setChartData(humChart,  []);
+    setChartData(soilChart, []);
+    [tempChart, humChart, soilChart].forEach(c => {
+      c.options.scales.x.min = undefined;
+      c.options.scales.x.max = undefined;
+      c.update('none');
+    });
+  }
+
+  async function applyDateRange() {
+    const fromVal = document.getElementById('dateFrom').value;
+    const toVal   = document.getElementById('dateTo').value;
+
+    document.getElementById('dateFrom').classList.remove('invalid');
+    document.getElementById('dateTo').classList.remove('invalid');
+
+    if (!fromVal) { document.getElementById('dateFrom').classList.add('invalid'); }
+    if (!toVal)   { document.getElementById('dateTo').classList.add('invalid');   }
+    if (!fromVal || !toVal) {
+      setRangeFeedback('Preencha as duas datas para filtrar.');
+      return;
+    }
+
+    const from = new Date(fromVal);
+    const to   = new Date(toVal);
+    if (from >= to) {
+      setRangeFeedback('A data inicial deve ser anterior à data final.');
+      document.getElementById('dateFrom').classList.add('invalid');
+      document.getElementById('dateTo').classList.add('invalid');
+      return;
+    }
+
+    setRangeFeedback('');
+    document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+    activeHours = null;
+    activeRange = { from, to };
+
+    resetAllZoom();
+    if (loadingController) loadingController.abort();
+    loadingController = new AbortController();
+
+    setChartData(tempChart, []);
+    setChartData(humChart,  []);
+    setChartData(soilChart, []);
+
+    try {
+      const url = `${API_BASE}/sensor-data/history/range?from=${from.toISOString()}&to=${to.toISOString()}`;
+      const res = await fetch(url, { signal: loadingController.signal });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const { points, average } = await res.json();
+
+      const tempData = [], humData = [], soilData = [];
+      for (const point of points) {
+        const ts = new Date(point.timestamp);
+        tempData.push({ x: ts, y: point.air?.temperature ?? null });
+        humData.push({ x: ts, y: point.air?.humidity    ?? null });
+        soilData.push({ x: ts, y: point.soil?.humidity  ?? null });
+      }
+
+      setChartData(tempChart, tempData);
+      setChartData(humChart,  humData);
+      setChartData(soilChart, soilData);
+
+      [tempChart, humChart, soilChart].forEach(c => {
+        c.options.scales.x.min = from.getTime();
+        c.options.scales.x.max = to.getTime();
+        c.update('none');
+      });
+
+      setValue('tempValue', average.air.temperature, '°C');
+      setValue('humValue',  average.air.humidity,    '%');
+      setValue('soilValue', average.soil.humidity,   '%');
+
+      document.getElementById('clearRangeBtn').style.display = '';
+    } catch (err) {
+      if (err.name === 'AbortError') return;
+      activeRange = null;
+      setRangeFeedback('Erro ao carregar dados do intervalo.');
+      console.error('Failed to load range data:', err);
+    }
   }
 
   function toggleExpand() {

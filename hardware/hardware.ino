@@ -30,7 +30,7 @@
 #define OUTBOX_TTL_MS    (2UL * 60UL * 60UL * 1000UL) // 2 hours in milliseconds
 
 struct OutboxEntry {
-  char          payload[256];
+  char          payload[320];
   unsigned long createdAt; // millis() timestamp when the entry was added
 };
 
@@ -66,7 +66,7 @@ const int pwmResolution = 8;
 // ─── Connectivity clients ─────────────────────────────────────────────────────
 
 WiFiClientSecure espClient;
-MQTTClient       mqttClient(512); // 512-byte buffer for messages
+MQTTClient       mqttClient(512); // 512-byte buffer for messages (larger than payload to accommodate QoS 2 overhead)
 
 DHT dht(DHT_PIN, DHT_TYPE);
 
@@ -89,9 +89,39 @@ void outboxEvictExpired() {
   }
 }
 
+// Extracts the "timestamp" field from a JSON payload string.
+// Returns 0 if the field is missing or the payload is invalid.
+unsigned long extractTimestamp(const char* payload) {
+  StaticJsonDocument<320> doc;
+  if (deserializeJson(doc, payload) != DeserializationError::Ok) return 0;
+  return doc["timestamp"] | 0UL;
+}
+
+// Returns true if a payload with the same timestamp already exists in the outbox.
+bool outboxIsDuplicate(const char* payload) {
+  unsigned long incoming = extractTimestamp(payload);
+  if (incoming == 0) return false; // cannot determine — allow it through
+
+  // Only need to check the most recently added entry: the loop() publish block
+  // runs every 2 s and always produces a fresh timestamp, so a duplicate is
+  // always the immediately preceding tail entry (same message, second enqueue).
+  if (outboxCount == 0) return false;
+
+  int lastIndex = (outboxTail - 1 + OUTBOX_MAX_SIZE) % OUTBOX_MAX_SIZE;
+  unsigned long lastTimestamp = extractTimestamp(outbox[lastIndex].payload);
+
+  return incoming == lastTimestamp;
+}
+
 // Appends a new payload to the outbox. Drops the oldest entry if the buffer is full.
+// Silently ignores payloads whose timestamp matches the last stored entry (deduplication).
 void outboxEnqueue(const char* payload) {
   outboxEvictExpired();
+
+  if (outboxIsDuplicate(payload)) {
+    Serial.println("[OUTBOX] Duplicate detected — skipping enqueue");
+    return;
+  }
 
   if (outboxCount == OUTBOX_MAX_SIZE) {
     // Buffer full — drop oldest to make room
@@ -111,6 +141,9 @@ void outboxEnqueue(const char* payload) {
 }
 
 // Flushes all valid cached entries to the broker, then clears the outbox.
+// Sends one message at a time, waiting for the QoS 2 handshake to complete
+// before moving to the next. Stops (without clearing) on the first failure
+// so no messages are lost.
 void outboxFlush() {
   if (outboxCount == 0) return;
 
@@ -123,26 +156,39 @@ void outboxFlush() {
   while (outboxCount > 0) {
     OutboxEntry& entry = outbox[outboxHead];
 
+    // Allow the MQTT stack to process incoming handshake packets before publishing
+    mqttClient.loop();
+
     bool ok = mqttClient.publish(GREENHOUSE_SENSORS_CURRENT_QUEUE, entry.payload, false, 2);
 
-    if (ok) {
-      Serial.printf("[OUTBOX] Flushed: %s\n", entry.payload);
-      flushed++;
-    } else {
-      Serial.println("[OUTBOX] Publish failed during flush — aborting");
-      break;
+    if (!ok) {
+      Serial.printf("[OUTBOX] Publish failed on message %d — aborting flush (remaining messages kept)\n", flushed + 1);
+      // Do NOT clear — remaining entries stay in the outbox for the next flush
+      Serial.printf("[OUTBOX] %d message(s) flushed, %d still pending\n", flushed, outboxCount);
+      return;
     }
+
+    Serial.printf("[OUTBOX] Flushed (%d/%d): %s\n", flushed + 1, flushed + outboxCount, entry.payload);
+    flushed++;
 
     outboxHead = (outboxHead + 1) % OUTBOX_MAX_SIZE;
     outboxCount--;
+
+    // Wait for the QoS 2 four-way handshake to complete before the next publish.
+    // Without this delay the broker receives a new PUBLISH before responding to
+    // the previous PUBREC, which causes rc=-3 (buffer overflow / timeout).
+    if (outboxCount > 0) {
+      delay(150);
+      mqttClient.loop(); // process PUBREC / PUBCOMP for the message just sent
+    }
   }
 
-  // Full clear — reset all pointers after flush
+  // All messages sent — reset pointers
   outboxHead  = 0;
   outboxTail  = 0;
   outboxCount = 0;
 
-  Serial.printf("[OUTBOX] Cleared. %d message(s) flushed.\n", flushed);
+  Serial.printf("[OUTBOX] Cleared. All %d message(s) flushed successfully.\n", flushed);
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -360,15 +406,20 @@ void loop() {
     Serial.printf("[PID]  Setpoint: %.2f | Output: %.2f\n", soilSetpoint, pidOutput);
 
     // Build JSON payload
-    StaticJsonDocument<256> sensorsMessage;
+    unsigned long ts     = millis();
+    String        mac    = WiFi.macAddress();
+    String        momentId = String(ts) + ":" + mac;
+
+    StaticJsonDocument<320> sensorsMessage;
     sensorsMessage["air"]["temperature"]       = currentTemperature;
     sensorsMessage["air"]["humidity"]          = currentHumidity;
     sensorsMessage["soil"]["humidity"]         = currentSoilHumidity;
     sensorsMessage["irrigation"]["pid_output"] = pidOutput;
-    sensorsMessage["deviceId"]                 = WiFi.macAddress();
-    sensorsMessage["timestamp"]                = millis();
+    sensorsMessage["deviceId"]                 = mac;
+    sensorsMessage["timestamp"]                = ts;
+    sensorsMessage["sensor_data_moment_id"]    = momentId;
 
-    char buffer[256];
+    char buffer[320];
     serializeJson(sensorsMessage, buffer);
 
     if (isConnected()) {

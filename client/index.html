@@ -345,6 +345,37 @@
 
         <div class="big-value temp-color mb-5" id="tempValue">--</div>
         <div class="chart-wrapper"><canvas id="tempChart"></canvas></div>
+
+        <hr class="soft-divider">
+
+        <!-- Air temperature setpoint control -->
+        <div>
+          <p class="text-xs font-mono tracking-widest uppercase mb-3" style="color: rgba(62,192,99,0.6);">
+            Setpoint de Temperatura
+          </p>
+          <div class="flex items-center gap-3">
+            <div class="relative">
+              <input
+                type="text"
+                id="airTemperatureSetpoint"
+                class="setpoint-input"
+                inputmode="decimal"
+                placeholder="0 – 60"
+                maxlength="5"
+                oninput="handleSetpointInput(this, 'celsiusSymbol')"
+                onblur="handleSetpointBlur(this, 'celsiusSymbol')"
+                onfocus="handleSetpointFocus(this, 'celsiusSymbol')"
+              />
+              <span
+                id="celsiusSymbol"
+                class="absolute right-3 top-1/2 -translate-y-1/2 text-sm font-mono pointer-events-none hidden"
+                style="color: rgba(174,234,188,0.5);"
+              >°C</span>
+            </div>
+            <button class="apply-btn" onclick="sendAirTemperatureSetpoint()">Aplicar</button>
+          </div>
+          <p id="airTemperatureSetpointFeedback" class="font-mono text-xs mt-2 transition-all" style="min-height:16px;"></p>
+        </div>
       </div>
 
       <!-- Humidity -->
@@ -397,9 +428,9 @@
                 placeholder="0 – 100"
                 value="70"
                 maxlength="6"
-                oninput="handleSetpointInput(this)"
-                onblur="handleSetpointBlur(this)"
-                onfocus="handleSetpointFocus(this)"
+                oninput="handleSetpointInput(this, 'pctSymbol')"
+                onblur="handleSetpointBlur(this, 'pctSymbol')"
+                onfocus="handleSetpointFocus(this, 'pctSymbol')"
               />
               <span
                 id="pctSymbol"
@@ -407,9 +438,9 @@
                 style="color: rgba(174,234,188,0.5);"
               >%</span>
             </div>
-            <button class="apply-btn" onclick="sendSetpoint()">Aplicar</button>
+            <button class="apply-btn" onclick="sendSoilSetpoint()">Aplicar</button>
           </div>
-          <p id="setpointFeedback" class="font-mono text-xs mt-2 transition-all" style="min-height:16px;"></p>
+          <p id="soilSetpointFeedback" class="font-mono text-xs mt-2 transition-all" style="min-height:16px;"></p>
         </div>
       </div>
 
@@ -683,13 +714,13 @@
   // Live mode: x.min is managed per-event; no initial load needed
 
   // ── Setpoint ───────────────────────────────────────────────────────────────
-  function setPctVisible(show) {
-    const sym = document.getElementById('pctSymbol');
+  function setSymbolVisible(symbolId, show) {
+    const sym = document.getElementById(symbolId);
     sym.classList.toggle('hidden', !show);
     sym.classList.toggle('inline-block', show);
   }
 
-  function handleSetpointInput(el) {
+  function handleSetpointInput(el, symbolId) {
     el.value = el.value.replace(/[^0-9.,]/g, '');
     const sepIdx = el.value.search(/[.,]/);
     if (sepIdx !== -1) {
@@ -697,40 +728,47 @@
       const decPart = el.value.slice(sepIdx + 1).replace(/[.,]/g, '').slice(0, 2);
       el.value = intPart + decPart;
     }
-    setPctVisible(el.value.length > 0);
+    setSymbolVisible(symbolId, el.value.length > 0);
   }
 
-  function handleSetpointBlur(el) {
+  function handleSetpointBlur(el, symbolId) {
     el.value = el.value.replace('.', ',');
-    setPctVisible(el.value.length > 0);
+    setSymbolVisible(symbolId, el.value.length > 0);
   }
 
-  function handleSetpointFocus(el) {
-    setPctVisible(el.value.length > 0);
+  function handleSetpointFocus(el, symbolId) {
+    setSymbolVisible(symbolId, el.value.length > 0);
   }
 
   async function loadSetpointConfig() {
     try {
-      const res = await fetch(`${API_BASE}/setpoint-config`);
-      const value = res.ok ? (await res.json()).setpoint : 70;
-      const input = document.getElementById('soilSetpoint');
-      input.value = String(value).replace('.', ',');
-      client.emit('setpoint-config', { setpoint: value });
+      const res  = await fetch(`${API_BASE}/setpoint-config`);
+      const data = res.ok ? await res.json() : { soilSetpoint: 70, airTemperatureSetpoint: null };
+
+      const soilInput = document.getElementById('soilSetpoint');
+      soilInput.value = String(data.soilSetpoint ?? 70).replace('.', ',');
+      setSymbolVisible('pctSymbol', soilInput.value.length > 0);
+
+      const airInput = document.getElementById('airTemperatureSetpoint');
+      if (data.airTemperatureSetpoint != null) {
+        airInput.value = String(data.airTemperatureSetpoint).replace('.', ',');
+        setSymbolVisible('celsiusSymbol', true);
+      }
     } catch {
-      client.emit('setpoint-config', { setpoint: 70 });
+      // silently fall back — inputs keep their default values
     }
   }
 
-  function sendSetpoint() {
+  function sendSoilSetpoint() {
     const input = document.getElementById('soilSetpoint');
     const raw   = input.value.trim();
 
-    if (!raw) { showFeedback('⚠️ Insira um valor para o setpoint.', false); return; }
+    if (!raw) { showFeedback('soilSetpointFeedback', '⚠️ Insira um valor para o setpoint.', false); return; }
 
     const normalized = raw.replace(',', '.');
     let value = parseFloat(normalized);
 
-    if (isNaN(value)) { showFeedback('⚠️ Valor inválido. Use apenas números.', false); return; }
+    if (isNaN(value)) { showFeedback('soilSetpointFeedback', '⚠️ Valor inválido. Use apenas números.', false); return; }
 
     let clamped = false;
     if (value > 100) { value = 100; clamped = true; }
@@ -738,11 +776,35 @@
 
     if (clamped) input.value = String(value).replace('.', ',');
 
-    client.emit('setpoint-config', { setpoint: value });
+    client.emit('setpoint-config', { soilSetpoint: value });
 
     const display = String(value).replace('.', ',');
     const note    = clamped ? ' (ajustado automaticamente)' : '';
-    showFeedback(`✅ Setpoint enviado: ${display}%${note}`, true);
+    showFeedback('soilSetpointFeedback', `✅ Setpoint enviado: ${display}%${note}`, true);
+  }
+
+  function sendAirTemperatureSetpoint() {
+    const input = document.getElementById('airTemperatureSetpoint');
+    const raw   = input.value.trim();
+
+    if (!raw) { showFeedback('airTemperatureSetpointFeedback', '⚠️ Insira um valor para o setpoint.', false); return; }
+
+    const normalized = raw.replace(',', '.');
+    let value = parseFloat(normalized);
+
+    if (isNaN(value)) { showFeedback('airTemperatureSetpointFeedback', '⚠️ Valor inválido. Use apenas números.', false); return; }
+
+    let clamped = false;
+    if (value > 60) { value = 60; clamped = true; }
+    if (value < 0)  { value = 0;  clamped = true; }
+
+    if (clamped) input.value = String(value).replace('.', ',');
+
+    client.emit('setpoint-config', { airTemperatureSetpoint: value });
+
+    const display = String(value).replace('.', ',');
+    const note    = clamped ? ' (ajustado automaticamente)' : '';
+    showFeedback('airTemperatureSetpointFeedback', `✅ Setpoint enviado: ${display}°C${note}`, true);
   }
 
   // ── Date range filter ──────────────────────────────────────────────────────
@@ -858,8 +920,8 @@
     [tempChart, humChart, soilChart].forEach(c => c.resize());
   }
 
-  function showFeedback(msg, ok) {
-    const el = document.getElementById('setpointFeedback');
+  function showFeedback(feedbackId, msg, ok) {
+    const el = document.getElementById(feedbackId);
     el.className = 'font-mono text-xs mt-2 transition-all ' + (ok ? 'feedback-ok' : 'feedback-err');
     el.textContent = msg;
     clearTimeout(el._t);

@@ -28,7 +28,7 @@ export class SensorController {
   @Get('setpoint-config')
   async getSetpointConfig() {
     const setpoint = await this.setpointConfigService.getSetpointConfig();
-    return setpoint ?? { setpoint: 70 };
+    return setpoint ?? { soilSetpoint: 70, airTemperatureSetpoint: null };
   }
 
   async getHistoricalData(hours: number): Promise<HistoricalDataResponse> {

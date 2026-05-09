@@ -5,6 +5,9 @@ export class SetpointConfig {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @Column({ type: 'float', name: 'setpoint' })
-  setpoint: number;
+  @Column({ type: 'float', name: 'soil_setpoint' })
+  soilSetpoint: number;
+
+  @Column({ type: 'float', name: 'air_temperature_setpoint', nullable: true })
+  airTemperatureSetpoint: number | null;
 }

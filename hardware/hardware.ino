@@ -43,7 +43,7 @@ int outboxCount = 0; // number of valid entries currently stored
 // ─── PID & control state ──────────────────────────────────────────────────────
 
 float soilSetpoint           = 70.0;
-float airTemperatureSetpoint = 70.0;
+float airTemperatureSetpoint = 20.0;
 float lastValidTemperature   = 0.0;
 float lastValidHumidity      = 0.0;
 

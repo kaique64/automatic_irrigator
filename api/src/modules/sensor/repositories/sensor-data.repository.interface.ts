@@ -9,6 +9,7 @@ export interface RawBucketRow {
 
 export interface SensorDataRepositoryInterface {
   save(sensorData: SensorData): Promise<SensorData>;
+  existsByMomentId(momentId: string): Promise<boolean>;
   findByTimeRange(hours: number): Promise<RawBucketRow[]>;
   findByDateRange(from: Date, to: Date): Promise<RawBucketRow[]>;
 }

@@ -22,6 +22,14 @@ export class SensorDataRepository implements SensorDataRepositoryInterface {
     return this.dataSource.getRepository(SensorData).save(sensorData);
   }
 
+  async existsByMomentId(momentId: string): Promise<boolean> {
+    const rows = await this.dataSource.query(
+      `SELECT 1 FROM sensor_data WHERE sensor_data_moment_id = $1 LIMIT 1`,
+      [momentId],
+    );
+    return rows.length > 0;
+  }
+
   async findByDateRange(from: Date, to: Date): Promise<RawBucketRow[]> {
     const diffHours = (to.getTime() - from.getTime()) / 3_600_000;
     let bucket: string;

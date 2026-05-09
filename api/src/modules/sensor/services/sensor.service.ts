@@ -17,6 +17,14 @@ export class SensorService implements SensorServiceInterface {
   ) {}
 
   async handleSensorData(data: SensorMessage): Promise<void> {
+    if (data.sensor_data_moment_id) {
+      const duplicate = await this.sensorDataRepository.existsByMomentId(data.sensor_data_moment_id);
+      if (duplicate) {
+        this.logger.warn(`Duplicate sensor_data_moment_id ${data.sensor_data_moment_id} — skipping`);
+        return;
+      }
+    }
+
     try {
       this.logger.log(`Saving sensor data: ${JSON.stringify(data)}`);
       const sensorData = SensorMapper.toEntity(data);

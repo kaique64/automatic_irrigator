@@ -1,4 +1,4 @@
-import { BadRequestException, Controller, Get, Query, ParseIntPipe } from '@nestjs/common';
+import { BadRequestException, Controller, DefaultValuePipe, Get, ParseIntPipe, Query } from '@nestjs/common';
 import { MessagePattern, Payload } from '@nestjs/microservices';
 import { SensorService } from '../services/sensor.service';
 import { SetpointConfigService } from '../services/setpoint-config.service';
@@ -29,6 +29,10 @@ export class SensorController {
   async getSetpointConfig() {
     const setpoint = await this.setpointConfigService.getSetpointConfig();
     return setpoint ?? { setpoint: 70 };
+  }
+
+  async getHistoricalData(hours: number): Promise<HistoricalDataResponse> {
+    return this.sensorService.getHistoricalData(hours);
   }
 
   @Get('sensor-data/history')

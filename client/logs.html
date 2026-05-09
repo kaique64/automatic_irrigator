@@ -1,0 +1,415 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Greenhouse — Logs</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet">
+
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            display: ['Syne', 'sans-serif'],
+            mono: ['DM Mono', 'monospace'],
+          },
+          colors: {
+            leaf: {
+              500: '#1fa845', 600: '#138535',
+            },
+          },
+        }
+      }
+    }
+  </script>
+
+  <style>
+    body {
+      background: #0d1a0f;
+      font-family: 'Syne', sans-serif;
+    }
+    body::before {
+      content: '';
+      position: fixed; inset: 0;
+      pointer-events: none; z-index: 0;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.04'/%3E%3C/svg%3E");
+      background-repeat: repeat; background-size: 128px 128px; opacity: 0.35;
+    }
+    .blob-1 {
+      background: radial-gradient(ellipse, rgba(30,168,70,0.18) 0%, transparent 70%);
+      position: fixed; top: -10%; left: -10%;
+      width: 60vw; height: 60vw; border-radius: 50%;
+      pointer-events: none; z-index: 0;
+    }
+    .card {
+      background: rgba(13, 26, 14, 0.72);
+      border: 1px solid rgba(46, 120, 60, 0.22);
+      backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px);
+      border-radius: 20px;
+    }
+    .shimmer-line {
+      height: 1px;
+      background: linear-gradient(90deg, transparent 0%, rgba(62,192,99,0.6) 40%, rgba(62,192,99,0.6) 60%, transparent 100%);
+    }
+    .status-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; flex-shrink: 0; }
+    .connected    { background: #3ec063; box-shadow: 0 0 8px #3ec063; animation: pulse-dot 2s ease infinite; }
+    .disconnected { background: #f87171; box-shadow: 0 0 8px #f87171; }
+    .connecting   { background: #f59e0b; box-shadow: 0 0 8px #f59e0b; }
+    @keyframes pulse-dot {
+      0%, 100% { box-shadow: 0 0 6px #3ec063; }
+      50%      { box-shadow: 0 0 14px #3ec063; }
+    }
+
+    /* Log list */
+    #logList {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+    .log-entry {
+      display: grid;
+      grid-template-columns: 160px 56px 72px 1fr;
+      gap: 12px;
+      align-items: baseline;
+      padding: 8px 14px;
+      border-radius: 10px;
+      font-family: 'DM Mono', monospace;
+      font-size: 12px;
+      border: 1px solid transparent;
+      animation: fadeSlide 0.2s ease forwards;
+    }
+    @keyframes fadeSlide {
+      from { opacity: 0; transform: translateY(-4px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+    .log-entry.level-error  { background: rgba(248,113,113,0.07); border-color: rgba(248,113,113,0.18); }
+    .log-entry.level-warn   { background: rgba(251,191,36,0.06);  border-color: rgba(251,191,36,0.15);  }
+    .log-entry.level-info   { background: rgba(62,192,99,0.05);   border-color: rgba(62,192,99,0.1);    }
+    .log-entry.level-debug  { background: rgba(148,163,184,0.04); border-color: rgba(148,163,184,0.08); }
+    .log-entry.level-mqtt   { background: rgba(99,179,237,0.05);  border-color: rgba(99,179,237,0.14);  }
+    .log-entry.level-air    { background: rgba(56,178,248,0.05);  border-color: rgba(56,178,248,0.14);  }
+    .log-entry.level-soil   { background: rgba(52,211,153,0.05);  border-color: rgba(52,211,153,0.14);  }
+    .log-entry.level-system { background: rgba(167,139,250,0.05); border-color: rgba(167,139,250,0.14); }
+    .log-entry.level-tag    { background: rgba(174,234,188,0.03); border-color: rgba(174,234,188,0.07); }
+    .log-ts   { color: rgba(174, 234, 188, 0.4); font-size: 11px; }
+    .log-badge {
+      display: inline-block;
+      padding: 1px 7px; border-radius: 5px;
+      font-size: 10px; font-weight: 500; letter-spacing: 0.08em; text-transform: uppercase;
+      text-align: center;
+    }
+    .badge-error  { background: rgba(248,113,113,0.18); color: #fca5a5; }
+    .badge-warn   { background: rgba(251,191,36,0.18);  color: #fcd34d; }
+    .badge-info   { background: rgba(62,192,99,0.18);   color: #86efac; }
+    .badge-debug  { background: rgba(148,163,184,0.18); color: #cbd5e1; }
+    .badge-mqtt   { background: rgba(99,179,237,0.18);  color: #90cdf4; }
+    .badge-air    { background: rgba(56,178,248,0.18);  color: #7dd3fc; }
+    .badge-soil   { background: rgba(52,211,153,0.18);  color: #6ee7b7; }
+    .badge-system { background: rgba(167,139,250,0.18); color: #c4b5fd; }
+    .badge-tag    { background: rgba(174,234,188,0.1);  color: rgba(174,234,188,0.55); }
+    .log-body { color: rgba(214, 245, 221, 0.85); word-break: break-word; }
+    .log-device { color: rgba(174, 234, 188, 0.35); font-size: 10px; }
+
+    /* Control buttons */
+    .ctrl-btn {
+      font-family: 'DM Mono', monospace;
+      font-size: 11px; font-weight: 500; letter-spacing: 0.08em;
+      padding: 6px 14px; border-radius: 8px;
+      border: 1px solid rgba(62, 192, 99, 0.22);
+      background: rgba(13, 26, 14, 0.6);
+      color: rgba(174, 234, 188, 0.6);
+      cursor: pointer;
+      transition: background 0.2s, border-color 0.2s, color 0.2s;
+    }
+    .ctrl-btn:hover {
+      border-color: rgba(62, 192, 99, 0.5);
+      color: #aeeabc;
+    }
+    .ctrl-btn.active {
+      background: rgba(62, 192, 99, 0.15);
+      border-color: rgba(62, 192, 99, 0.65);
+      color: #77d892;
+    }
+    .back-link {
+      font-family: 'DM Mono', monospace;
+      font-size: 11px; letter-spacing: 0.08em;
+      color: rgba(174, 234, 188, 0.5);
+      text-decoration: none;
+      transition: color 0.2s;
+    }
+    .back-link:hover { color: #aeeabc; }
+
+    #logContainer {
+      overflow-y: auto;
+      max-height: calc(100vh - 220px);
+      min-height: 300px;
+      scrollbar-width: thin;
+      scrollbar-color: rgba(62,192,99,0.2) transparent;
+    }
+    #logContainer::-webkit-scrollbar { width: 4px; }
+    #logContainer::-webkit-scrollbar-track { background: transparent; }
+    #logContainer::-webkit-scrollbar-thumb { background: rgba(62,192,99,0.2); border-radius: 4px; }
+
+    .badge { font-family: 'DM Mono', monospace; font-size: 10px; padding: 2px 8px; border-radius: 6px; background: rgba(62, 192, 99, 0.1); color: rgba(119, 216, 146, 0.85); border: 1px solid rgba(62, 192, 99, 0.18); }
+    .empty-state { text-align: center; padding: 60px 0; color: rgba(174, 234, 188, 0.25); font-family: 'DM Mono', monospace; font-size: 13px; }
+  </style>
+</head>
+<body class="min-h-screen relative">
+
+  <div class="blob-1"></div>
+
+  <div class="relative z-10 max-w-6xl mx-auto px-5 py-10">
+
+    <!-- Header -->
+    <div class="mb-8">
+      <div class="flex items-center justify-between flex-wrap gap-4 mb-4">
+        <div class="flex items-center gap-5">
+          <a href="index.html" class="back-link">← Dashboard</a>
+          <div>
+            <p class="text-xs font-mono tracking-[0.22em] uppercase mb-1" style="color: rgba(62,192,99,0.65);">
+              Sistema de Monitoramento
+            </p>
+            <h1 class="text-white font-display font-extrabold text-3xl tracking-tight leading-none">
+              📋 Logs
+            </h1>
+          </div>
+        </div>
+
+        <!-- Status pill -->
+        <div class="card flex items-center gap-3 px-4 py-3">
+          <span class="status-dot connecting" id="statusDot"></span>
+          <span class="text-sm font-mono" style="color: #aeeabc;" id="statusText">Conectando...</span>
+          <span class="badge" id="logCount">0 logs</span>
+        </div>
+      </div>
+      <div class="shimmer-line"></div>
+    </div>
+
+    <!-- Log viewer card -->
+    <div class="card p-5">
+
+      <!-- Controls -->
+      <!-- Controls row -->
+      <div class="flex items-center justify-between flex-wrap gap-3 mb-4">
+        <div class="flex items-center gap-2 flex-wrap">
+          <button id="autoScrollBtn" class="ctrl-btn active" onclick="toggleAutoScroll()">↓ Auto-scroll</button>
+          <button class="ctrl-btn" onclick="clearLogs()">✕ Limpar</button>
+        </div>
+        <span class="font-mono text-xs" style="color: rgba(174,234,188,0.3);">
+          <strong id="shownCount" style="color:rgba(174,234,188,0.5);">0</strong> / <strong id="totalCount" style="color:rgba(174,234,188,0.35);">0</strong> entradas
+        </span>
+      </div>
+
+      <!-- Level filter bar -->
+      <div class="flex items-center gap-2 flex-wrap mb-4">
+        <span class="font-mono text-xs tracking-widest uppercase" style="color:rgba(62,192,99,0.45);margin-right:2px;">Nível</span>
+        <button id="filter-all" class="ctrl-btn active" onclick="setFilter(null)">Todos</button>
+        <div id="tagFilterBar" class="flex items-center gap-2 flex-wrap"></div>
+      </div>
+
+      <hr style="border: none; border-top: 1px solid rgba(62,192,99,0.1); margin-bottom: 14px;">
+
+      <!-- Log stream -->
+      <div id="logContainer">
+        <div id="logList">
+          <div class="empty-state" id="emptyState">Aguardando logs...</div>
+        </div>
+      </div>
+    </div>
+
+    <p class="text-center font-mono text-xs mt-8 tracking-[0.18em]" style="color: rgba(62,192,99,0.28);">
+      GREENHOUSE MONITORING SYSTEM · v2.0
+    </p>
+  </div>
+
+<script>
+  const API_BASE      = 'http://localhost:3000';
+  const MAX_LOGS      = 500;
+  let autoScroll      = true;
+  let logCount        = 0;
+  let activeFilter    = null;
+  const registeredTags = new Set();
+
+  // ── Socket.IO ──────────────────────────────────────────────────────────────
+  const client = io(API_BASE);
+
+  client.on('connect',      () => setStatus('connected',    'Conectado ✅'));
+  client.on('reconnecting', () => setStatus('connecting',   'Reconectando…'));
+  client.on('disconnect',   () => setStatus('disconnected', 'Desconectado ❌'));
+
+  client.on('sensor-logs', (log) => appendLog(log));
+
+  function setStatus(state, text) {
+    document.getElementById('statusDot').className  = 'status-dot ' + state;
+    document.getElementById('statusText').textContent = text;
+  }
+
+  // ── Log rendering ──────────────────────────────────────────────────────────
+  // Row background driven by log level (severity)
+  function levelClass(level) {
+    switch ((level ?? '').toLowerCase()) {
+      case 'error':                return 'level-error';
+      case 'warn': case 'warning': return 'level-warn';
+      case 'debug':                return 'level-debug';
+      default:                     return 'level-info';
+    }
+  }
+
+  // Left badge: severity level (INFO / WARN / ERROR / DEBUG)
+  function levelBadge(level) {
+    const l   = (level ?? 'info').toLowerCase();
+    const lbl = escapeHtml((level ?? 'info').toUpperCase());
+    switch (l) {
+      case 'error':                return `<span class="log-badge badge-error">${lbl}</span>`;
+      case 'warn': case 'warning': return `<span class="log-badge badge-warn">${lbl}</span>`;
+      case 'debug':                return `<span class="log-badge badge-debug">${lbl}</span>`;
+      default:                     return `<span class="log-badge badge-info">${lbl}</span>`;
+    }
+  }
+
+  // Right badge: source tag (WIFI / AIR / SOIL / MQTT / …)
+  function tagBadge(tag) {
+    const t   = (tag ?? '').toLowerCase();
+    const lbl = escapeHtml(tag ?? '—');
+    switch (t) {
+      case 'mqtt':   return `<span class="log-badge badge-mqtt">${lbl}</span>`;
+      case 'air':    return `<span class="log-badge badge-air">${lbl}</span>`;
+      case 'soil':   return `<span class="log-badge badge-soil">${lbl}</span>`;
+      case 'system': return `<span class="log-badge badge-system">${lbl}</span>`;
+      default:       return `<span class="log-badge badge-tag">${lbl}</span>`;
+    }
+  }
+
+  function formatTs(raw) {
+    const d = new Date(raw);
+    if (isNaN(d)) return '—';
+    return d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })
+      + ' ' + d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  }
+
+  function registerTag(tag) {
+    if (!tag || registeredTags.has(tag)) return;
+    registeredTags.add(tag);
+
+    const bar = document.getElementById('tagFilterBar');
+    const btn = document.createElement('button');
+    btn.id        = 'filter-' + tag;
+    btn.className = 'ctrl-btn';
+    btn.textContent = tag;
+    btn.onclick   = () => setFilter(tag);
+    bar.appendChild(btn);
+  }
+
+  function setFilter(tag) {
+    activeFilter = tag;
+
+    document.getElementById('filter-all').classList.toggle('active', tag === null);
+    registeredTags.forEach(t => {
+      const btn = document.getElementById('filter-' + t);
+      if (btn) btn.classList.toggle('active', t === tag);
+    });
+
+    const list = document.getElementById('logList');
+    let shown = 0;
+    for (const entry of list.children) {
+      if (entry.id === 'emptyState') continue;
+      const match = tag === null || entry.dataset.level === tag;
+      entry.style.display = match ? '' : 'none';
+      if (match) shown++;
+    }
+    document.getElementById('shownCount').textContent = shown;
+  }
+
+  function appendLog(log, prepend = false) {
+    const tag      = log.rawData?.tag   ?? log.level ?? null;
+    const severity = log.rawData?.level ?? null;
+    const list = document.getElementById('logList');
+
+    const empty = document.getElementById('emptyState');
+    if (empty) empty.remove();
+
+    // Trim oldest entries beyond MAX_LOGS
+    while (list.children.length >= MAX_LOGS) {
+      list.removeChild(prepend ? list.lastChild : list.firstChild);
+    }
+
+    registerTag(tag);
+
+    const entry = document.createElement('div');
+    entry.className      = 'log-entry ' + levelClass(severity);
+    entry.dataset.level  = tag;
+    entry.style.display  = (activeFilter === null || activeFilter === tag) ? '' : 'none';
+    entry.innerHTML =
+      `<span class="log-ts">${formatTs(log.timestamp ?? log.createdAt)}</span>` +
+      levelBadge(severity) +
+      tagBadge(tag) +
+      `<span class="log-body">${escapeHtml(log.message)}</span>`;
+
+    if (prepend) {
+      list.insertBefore(entry, list.firstChild);
+    } else {
+      list.appendChild(entry);
+    }
+
+    logCount++;
+    const shown = [...list.children].filter(el => el.style.display !== 'none').length;
+    document.getElementById('logCount').textContent   = logCount + ' logs';
+    document.getElementById('totalCount').textContent = logCount;
+    document.getElementById('shownCount').textContent = shown;
+
+    if (autoScroll && !prepend && (activeFilter === null || activeFilter === tag)) {
+      const container = document.getElementById('logContainer');
+      container.scrollTop = container.scrollHeight;
+    }
+  }
+
+  function escapeHtml(str) {
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  // ── Controls ───────────────────────────────────────────────────────────────
+  function toggleAutoScroll() {
+    autoScroll = !autoScroll;
+    const btn = document.getElementById('autoScrollBtn');
+    btn.classList.toggle('active', autoScroll);
+  }
+
+  function clearLogs() {
+    const list = document.getElementById('logList');
+    list.innerHTML = '<div class="empty-state" id="emptyState">Aguardando logs...</div>';
+    logCount     = 0;
+    activeFilter = null;
+    registeredTags.clear();
+    document.getElementById('tagFilterBar').innerHTML = '';
+    document.getElementById('filter-all').classList.add('active');
+    document.getElementById('logCount').textContent   = '0 logs';
+    document.getElementById('totalCount').textContent = '0';
+    document.getElementById('shownCount').textContent = '0';
+  }
+
+  // ── Initial load ───────────────────────────────────────────────────────────
+  async function loadRecentLogs() {
+    try {
+      const res = await fetch(`${API_BASE}/logs?limit=200`);
+      if (!res.ok) return;
+      const logs = await res.json();
+      // API returns newest-first; render oldest-first
+      for (const log of logs.slice().reverse()) {
+        appendLog(log);
+      }
+    } catch (err) {
+      console.error('Failed to load recent logs:', err);
+    }
+  }
+
+  loadRecentLogs();
+</script>
+</body>
+</html>

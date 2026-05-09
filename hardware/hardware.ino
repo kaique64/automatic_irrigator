@@ -11,13 +11,13 @@
 #define WATER_PUMP_FULL_CAPACITY 255
 
 #define DHT_TYPE          DHT22
-#define DHT_PIN           27
+#define DHT_PIN           26
 #define SOIL_HUMIDITY_PIN 34
 
 #define SOIL_DRY 4095
 #define SOIL_WET 1400
 
-#define WATER_PUMP_PWM_PIN 25
+#define WATER_PUMP_PWM_PIN 32
 
 // ─── MQTT topics ──────────────────────────────────────────────────────────────
 

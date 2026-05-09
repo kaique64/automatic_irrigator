@@ -21,7 +21,8 @@
 
 // ─── MQTT topics ──────────────────────────────────────────────────────────────
 
-#define GREENHOUSE_SOIL_HUMIDITY_SETPOINT "greenhouse/setpoint"
+#define GREENHOUSE_SOIL_HUMIDITY_SETPOINT "greenhouse/setpoint/soil"
+#define GREENHOUSE_AIR_TEMPERATURE_SETPOINT "greenhouse/setpoint/air/temperature"
 #define GREENHOUSE_SENSORS_CURRENT_QUEUE  "greenhouse/sensors"
 
 // ─── Outbox (cache) settings ──────────────────────────────────────────────────
@@ -41,9 +42,10 @@ int outboxCount = 0; // number of valid entries currently stored
 
 // ─── PID & control state ──────────────────────────────────────────────────────
 
-float soilSetpoint         = 70.0;
-float lastValidTemperature = 0.0;
-float lastValidHumidity    = 0.0;
+float soilSetpoint           = 70.0;
+float airTemperatureSetpoint = 70.0;
+float lastValidTemperature   = 0.0;
+float lastValidHumidity      = 0.0;
 
 float Kp_base = 2.0;
 float Ki_base = 0.05;
@@ -251,6 +253,7 @@ void tryReconnectMQTT() {
   if (mqttClient.connect(clientId.c_str(), MQTT_USERNAME, MQTT_PASSWORD)) {
     Serial.println(" connected!");
     mqttClient.subscribe(GREENHOUSE_SOIL_HUMIDITY_SETPOINT, 2);
+    mqttClient.subscribe(GREENHOUSE_AIR_TEMPERATURE_SETPOINT, 2);
 
     // Connection restored — flush the outbox
     outboxFlush();
@@ -274,10 +277,16 @@ void mqttCallback(String& topic, String& payload) {
     return;
   }
 
-  if (doc.containsKey("setpoint")) {
-    soilSetpoint = doc["setpoint"];
-    Serial.print("[MQTT] Setpoint received: ");
+  if (doc.containsKey("soilSetpoint")) {
+    soilSetpoint = doc["soilSetpoint"];
+    Serial.print("[MQTT] Soil setpoint received: ");
     Serial.println(soilSetpoint);
+  }
+
+  if (doc.containsKey("airTemperatureSetpoint")) {
+    airTemperatureSetpoint = doc["airTemperatureSetpoint"];
+    Serial.print("[MQTT] Air temperature setpoint received: ");
+    Serial.println(airTemperatureSetpoint);
   }
 }
 
@@ -328,6 +337,7 @@ void setup() {
     if (mqttClient.connect(clientId.c_str(), MQTT_USERNAME, MQTT_PASSWORD)) {
       Serial.println("[MQTT] Connected!");
       mqttClient.subscribe(GREENHOUSE_SOIL_HUMIDITY_SETPOINT, 2);
+      mqttClient.subscribe(GREENHOUSE_AIR_TEMPERATURE_SETPOINT, 2);
     } else {
       Serial.println("[MQTT] Initial connection failed — offline mode active");
     }
